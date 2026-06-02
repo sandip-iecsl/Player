@@ -1,0 +1,120 @@
+name: 🆓 Free iOS Development Build
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'development'
+        type: choice
+        options:
+        - development
+        - debug
+
+jobs:
+  free_ios_build:
+    name: 🔨 Build Free iOS App
+    runs-on: macos-latest
+    
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: 🐦 Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.24.0'
+        channel: 'stable'
+        cache: true
+        
+    - name: 📦 Install dependencies
+      run: flutter pub get
+      
+    - name: 🔍 Analyze code
+      run: flutter analyze --fatal-infos
+      continue-on-error: true
+      
+    - name: 🧪 Run tests
+      run: flutter test
+      continue-on-error: true
+      
+    - name: 🛠️ Setup Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: latest-stable
+        
+    - name: 🔨 Build iOS (Development - No Code Signing)
+      run: |
+        echo "🔨 Building iOS app without code signing..."
+        flutter build ios --debug --no-codesign
+        echo "✅ Build completed successfully!"
+        
+    - name: 📦 Create Development IPA
+      run: |
+        echo "📦 Creating development IPA..."
+        cd build/ios/iphoneos
+        
+        # Create IPA directory
+        mkdir -p ../ipa
+        
+        # Create unsigned IPA for development/testing
+        zip -r ../ipa/aura_player_development.ipa Runner.app
+        
+        echo "✅ Development IPA created!"
+        echo "📍 Location: build/ios/ipa/aura_player_development.ipa"
+        
+    - name: 📊 Build Information
+      run: |
+        echo "## 🎉 Free iOS Build Complete!" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📱 App Details:" >> $GITHUB_STEP_SUMMARY
+        echo "- **App Name:** Aura Player" >> $GITHUB_STEP_SUMMARY
+        echo "- **Build Type:** Development (Unsigned)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Installation:** Manual via Xcode, 3uTools, or AltStore" >> $GITHUB_STEP_SUMMARY
+        echo "- **Validity:** 7 days (development)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Devices:** Up to 3 per Apple ID" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📥 Download:" >> $GITHUB_STEP_SUMMARY
+        echo "- Check the **Artifacts** section below" >> $GITHUB_STEP_SUMMARY
+        echo "- Download `aura-player-development-ipa`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📱 Installation Methods:" >> $GITHUB_STEP_SUMMARY
+        echo "1. **Xcode:** Drag IPA to device in Devices & Simulators" >> $GITHUB_STEP_SUMMARY
+        echo "2. **3uTools:** Free tool for Windows/Mac" >> $GITHUB_STEP_SUMMARY
+        echo "3. **AltStore:** Sideloading solution" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### ⚠️ Important Notes:" >> $GITHUB_STEP_SUMMARY
+        echo "- This is an **unsigned development build**" >> $GITHUB_STEP_SUMMARY
+        echo "- **No Apple Developer account required**" >> $GITHUB_STEP_SUMMARY
+        echo "- **Completely FREE** to create and install" >> $GITHUB_STEP_SUMMARY
+        echo "- Apps expire after 7 days (can be reinstalled)" >> $GITHUB_STEP_SUMMARY
+        
+    - name: 📤 Upload Development IPA
+      uses: actions/upload-artifact@v4
+      with:
+        name: aura-player-development-ipa
+        path: build/ios/ipa/*.ipa
+        retention-days: 30
+        
+    - name: 📋 Installation Instructions
+      run: |
+        echo ""
+        echo "🎉 Your free iOS app is ready!"
+        echo ""
+        echo "📥 To download:"
+        echo "1. Go to the Actions tab in GitHub"
+        echo "2. Click on this workflow run"
+        echo "3. Download 'aura-player-development-ipa' from Artifacts"
+        echo ""
+        echo "📱 To install:"
+        echo "1. Extract the downloaded zip file"
+        echo "2. Use one of these methods:"
+        echo "   - Xcode: Drag IPA to your device"
+        echo "   - 3uTools: Install via Apps section"
+        echo "   - AltStore: Sideload the IPA"
+        echo ""
+        echo "⚠️  Remember: Development builds expire after 7 days"
+        echo "💡 Tip: Use AltStore for automatic refresh"

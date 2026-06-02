@@ -1,0 +1,50 @@
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.buildDir = "../build"
+subprojects {
+    project.buildDir = "${rootProject.buildDir}/${project.name}"
+}
+subprojects {
+    project.evaluationDependsOn(":app")
+}
+
+subprojects {
+    // Force namespace for AGP 8.0+ compatibility
+    project.plugins.withId("com.android.library") {
+        project.android {
+            if (namespace == null) {
+                namespace = "com.aura.player.${project.name.replaceAll(":", "_").replaceAll("-", "_")}"
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_1_8
+                targetCompatibility JavaVersion.VERSION_1_8
+            }
+        }
+    }
+    project.plugins.withId("com.android.application") {
+        project.android {
+            if (namespace == null) {
+                namespace = "com.aura.player.${project.name.replaceAll(":", "_").replaceAll("-", "_")}"
+            }
+            compileOptions {
+                sourceCompatibility JavaVersion.VERSION_1_8
+                targetCompatibility JavaVersion.VERSION_1_8
+            }
+        }
+    }
+    
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            jvmTarget = "1.8"
+        }
+    }
+}
+
+tasks.register("clean", Delete) {
+    delete rootProject.buildDir
+}
