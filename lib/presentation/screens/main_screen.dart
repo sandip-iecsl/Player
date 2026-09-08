@@ -44,6 +44,9 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
     GlobalKey<NavigatorState>(),
   ];
 
+  // Navigation tab history stack (starts on Tab 0: Home)
+  List<int> _tabHistory = [0];
+
   late final List<Widget> _screens = [
     _TabNavigator(root: const HomeScreen(), navigatorKey: _navigatorKeys[0]),
     _TabNavigator(root: SearchScreen(key: _searchKey), navigatorKey: _navigatorKeys[1]),
@@ -84,6 +87,7 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
         if (mounted) {
           setState(() {
             _currentIndex = 2; // Route to Library on startup if offline
+            _tabHistory = [2];
           });
         }
       }
@@ -155,46 +159,78 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
 
   DateTime? _lastBackPressTime;
 
-  Future<bool> _onWillPop() async {
-    // If full player panel is open, close it first
+  /// Handles Android device physical back button and gesture navigation
+  Future<void> _handleBackPress() async {
+    // 1. If full player panel is open, collapse it first
     try {
-      if (_panelController.isPanelOpen) {
+      if (_panelController.isAttached && _panelController.isPanelOpen) {
         _panelController.close();
-        return false;
+        return;
       }
     } catch (_) {}
     
-    // Check if the current tab's navigator can pop
-    final navigator = _navigatorKeys[_currentIndex].currentState;
-    if (navigator != null && navigator.canPop()) {
-      navigator.pop();
-      return false;
+    // 2. Check if the current tab's nested navigator has a sub-page to pop (e.g. PlaylistScreen, LocalSongsScreen)
+    final currentNav = _navigatorKeys[_currentIndex].currentState;
+    if (currentNav != null && currentNav.canPop()) {
+      currentNav.pop();
+      return;
     }
 
-    // If not on home tab, navigate to home
-    if (_currentIndex != 0) {
-      if (mounted) setState(() => _currentIndex = 0);
-      return false;
+    // 3. Check if global root modal/dialog stack can pop
+    if (navigatorKey.currentState != null && navigatorKey.currentState!.canPop()) {
+      navigatorKey.currentState!.pop();
+      return;
     }
 
-    // Double-tap back press to confirm exit and prevent accidental back gestures
+    // 4. Pop and navigate back through tab history (e.g. Settings -> Library -> Search -> Home)
+    if (_tabHistory.length > 1) {
+      setState(() {
+        _tabHistory.removeLast();
+        final prevTab = _tabHistory.last;
+        if (_currentIndex == 1 && prevTab != 1) {
+          _searchKey.currentState?.clearState();
+        }
+        _currentIndex = prevTab;
+      });
+      return;
+    } else if (_currentIndex != 0) {
+      // If history is exhausted but not on Tab 0 (Home), return to Home
+      setState(() {
+        if (_currentIndex == 1) {
+          _searchKey.currentState?.clearState();
+        }
+        _currentIndex = 0;
+        _tabHistory = [0];
+      });
+      return;
+    }
+
+    // 5. On root Home screen: double-tap back within 2 seconds to safely exit
     final now = DateTime.now();
     if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
       _lastBackPressTime = now;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Press back again to exit'),
-            duration: Duration(seconds: 2),
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.exit_to_app_rounded, color: Colors.white70, size: 18),
+                SizedBox(width: 10),
+                Text('Press back again to exit Aura Player'),
+              ],
+            ),
+            duration: const Duration(seconds: 2),
             behavior: SnackBarBehavior.floating,
+            backgroundColor: const Color(0xFF252530),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
       }
-      return false;
+      return;
     }
 
+    // Exit application
     SystemNavigator.pop();
-    return false;
   }
 
   @override
@@ -218,8 +254,12 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
 
     final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
 
-    return WillPopScope(
-      onWillPop: _onWillPop,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await _handleBackPress();
+      },
       child: Scaffold(
         resizeToAvoidBottomInset: false,
         backgroundColor: AppColors.deepSpaceBlack,
@@ -239,7 +279,12 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
             if (_currentIndex == index) {
               _navigatorKeys[index].currentState?.popUntil((route) => route.isFirst);
             } else {
-              setState(() => _currentIndex = index);
+              setState(() {
+                _currentIndex = index;
+                if (_tabHistory.isEmpty || _tabHistory.last != index) {
+                  _tabHistory.add(index);
+                }
+              });
             }
           },
           selectedItemColor: AppColors.neonPink,
