@@ -362,10 +362,8 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
 
           // ── Song list with Dynamic Offline Filtering & Badges ───────────
           ValueListenableBuilder(
-            valueListenable: Hive.isBoxOpen('offline_songs')
-                ? Hive.box('offline_songs').listenable()
-                : ValueNotifier<Box?>(null),
-            builder: (context, Box? offlineBox, _) {
+            valueListenable: Hive.box('offline_songs').listenable(),
+            builder: (context, Box box, _) {
               final isOnline = ref.watch(connectivityProvider).valueOrNull ?? true;
 
               return SliverList(
