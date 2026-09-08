@@ -1,9 +1,12 @@
 import 'package:audio_service/audio_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import '../../data/services/audio_service.dart'; // PlaybackContext
+import '../../data/services/offline_storage_service.dart';
 import '../../domain/entities/song.dart';
 import '../providers/audio_provider.dart';
+import '../providers/connectivity_provider.dart';
 import '../providers/history_provider.dart';
 import '../providers/music_data_providers.dart';
 import '../widgets/playlist_dialogs.dart';
@@ -100,7 +103,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
         return;
       }
       
-      // Resolve these tracks to JioSaavn playable songs
+      // Resolve these tracks to playable songs
       final resolvedSongs = <Song>[];
       for (final t in tracks) {
         final results = await hybrid.searchSongs('${t.title} ${t.artist}', limit: 1);
@@ -142,26 +145,78 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
     }
   }
 
-  // ── Play all ─────────────────────────────────────────────────────────────
+  // ── Play all (Sequential vs Shuffle Queue) ─────────────────────────────────
 
-  Future<void> _playAll({int startIndex = 0}) async {
+  Future<void> _playAll({int startIndex = 0, Song? targetSong}) async {
     if (_songs.isEmpty) return;
     final audio = ref.read(audioServiceProvider);
+    final isOnline = ref.read(connectivityProvider).valueOrNull ?? true;
 
-    // Apply shuffle first if active
-    List<Song> queue = List.from(_songs);
+    // Determine playable candidate songs depending on offline/online state
+    List<Song> playablePool;
+    if (!isOnline) {
+      playablePool = _songs.where((s) => 
+        OfflineStorageService.isDownloaded(s.id) || 
+        (s.previewUrl != null && !s.previewUrl!.startsWith('http'))
+      ).toList();
+
+      if (playablePool.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.wifi_off_rounded, color: Colors.orangeAccent, size: 18),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text('No downloaded songs available in this playlist for offline playback.'),
+                  ),
+                ],
+              ),
+              backgroundColor: const Color(0xFF252530),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        }
+        return;
+      }
+    } else {
+      playablePool = List.from(_songs);
+    }
+
+    // Determine starting index in the playable pool
+    int effectiveStartIndex = startIndex;
+    if (targetSong != null) {
+      final foundIdx = playablePool.indexWhere((s) => s.id == targetSong.id);
+      effectiveStartIndex = foundIdx >= 0 ? foundIdx : 0;
+    } else {
+      effectiveStartIndex = effectiveStartIndex.clamp(0, playablePool.length - 1);
+    }
+
+    List<Song> queue = List.from(playablePool);
+
     if (_isShuffleOn) {
+      final startingSong = queue[effectiveStartIndex];
+      queue.removeAt(effectiveStartIndex);
       queue.shuffle();
-      startIndex = 0; // shuffled — always start from new index 0
+      queue.insert(0, startingSong);
+      effectiveStartIndex = 0; // Tapped track is now index 0, followed by randomized items
+      await audio.setShuffleMode(AudioServiceShuffleMode.all);
+    } else {
+      await audio.setShuffleMode(AudioServiceShuffleMode.none);
     }
 
     await audio.loadQueue(
       queue,
-      startIndex: startIndex,
-      context: PlaybackContext.playlist, // → stops at end, no autoplay
+      startIndex: effectiveStartIndex,
+      context: PlaybackContext.playlist, // Bound to playlist, sequential progression
       contextId: widget.playlistId,
     );
-    ref.read(recentlyPlayedProvider.notifier).add(queue[startIndex]);
+
+    if (queue.isNotEmpty && effectiveStartIndex < queue.length) {
+      ref.read(recentlyPlayedProvider.notifier).add(queue[effectiveStartIndex]);
+    }
   }
 
   // ── Shuffle toggle ────────────────────────────────────────────────────────
@@ -180,7 +235,6 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
 
   Future<void> _onPlayPauseTap(bool isPlaying) async {
     final audio = ref.read(audioServiceProvider);
-    // If nothing loaded yet → load and play from beginning
     final current = ref.read(currentSongProvider).valueOrNull;
     if (current == null) {
       await _playAll();
@@ -306,82 +360,198 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
 
           const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-          // ── Song list ─────────────────────────────────────────────────────
-          SliverList(
-            delegate: SliverChildBuilderDelegate(
-              (context, index) {
-                if (index == _songs.length && _hasMoreResults && widget.playlistId != null) {
-                  return Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24.0),
-                    child: Center(
-                      child: CircularProgressIndicator(
-                        color: AppColors.neonPink,
-                        strokeWidth: 2.5,
-                      ),
-                    ),
-                  );
-                }
-                if (index >= _songs.length) return null;
-                final song = _songs[index];
-                final isCurrentlyPlaying = currentSong?.id == song.id && isPlaying;
+          // ── Song list with Dynamic Offline Filtering & Badges ───────────
+          ValueListenableBuilder(
+            valueListenable: Hive.isBoxOpen('offline_songs')
+                ? Hive.box('offline_songs').listenable()
+                : ValueNotifier<Box?>(null),
+            builder: (context, Box? offlineBox, _) {
+              final isOnline = ref.watch(connectivityProvider).valueOrNull ?? true;
 
-                return InkWell(
-                  onTap: () => _playAll(startIndex: index),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Row(
-                      children: [
-                        // Album art
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(4),
-                          child: song.albumArt != null
-                              ? Image.network(song.albumArt!, width: 48, height: 48, fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(width: 48, height: 48, color: AppColors.deepSpaceBlackLighter))
-                              : Container(width: 48, height: 48, color: AppColors.deepSpaceBlackLighter,
-                                  child: Icon(Icons.music_note, color: AppColors.textSecondary)),
+              return SliverList(
+                delegate: SliverChildBuilderDelegate(
+                  (context, index) {
+                    if (index == _songs.length && _hasMoreResults && widget.playlistId != null) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24.0),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.neonPink,
+                            strokeWidth: 2.5,
+                          ),
                         ),
-                        const SizedBox(width: 12),
-                        // Title + artist
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                song.title,
-                                style: TextStyle(
-                                  color: isCurrentlyPlaying ? AppColors.neonPink : AppColors.textPrimary,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w500,
+                      );
+                    }
+                    if (index >= _songs.length) return null;
+                    final song = _songs[index];
+                    final isCurrentlyPlaying = currentSong?.id == song.id && isPlaying;
+                    final isDownloaded = OfflineStorageService.isDownloaded(song.id) ||
+                        (song.previewUrl != null && !song.previewUrl!.startsWith('http'));
+                    final isPlayable = isOnline || isDownloaded;
+
+                    return Opacity(
+                      opacity: isPlayable ? 1.0 : 0.45,
+                      child: InkWell(
+                        onTap: () {
+                          if (isPlayable) {
+                            _playAll(targetSong: song);
+                          } else {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Row(
+                                  children: [
+                                    const Icon(Icons.cloud_off_rounded, color: Colors.orangeAccent, size: 18),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text('"${song.title}" is online-only. Connect to internet or download for offline playback.'),
+                                    ),
+                                  ],
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                backgroundColor: const Color(0xFF252530),
+                                behavior: SnackBarBehavior.floating,
+                                duration: const Duration(seconds: 2),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                               ),
-                              const SizedBox(height: 4),
-                              Text(song.artist,
-                                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis),
+                            );
+                          }
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          child: Row(
+                            children: [
+                              // Album art
+                              Stack(
+                                children: [
+                                  ClipRRect(
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: song.albumArt != null
+                                        ? Image.network(
+                                            song.albumArt!,
+                                            width: 48,
+                                            height: 48,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (_, __, ___) => Container(
+                                              width: 48,
+                                              height: 48,
+                                              color: AppColors.deepSpaceBlackLighter,
+                                              child: Icon(Icons.music_note, color: AppColors.textSecondary),
+                                            ),
+                                          )
+                                        : Container(
+                                            width: 48,
+                                            height: 48,
+                                            color: AppColors.deepSpaceBlackLighter,
+                                            child: Icon(Icons.music_note, color: AppColors.textSecondary),
+                                          ),
+                                  ),
+                                  if (!isPlayable)
+                                    Container(
+                                      width: 48,
+                                      height: 48,
+                                      decoration: BoxDecoration(
+                                        color: Colors.black54,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Icon(Icons.cloud_off_rounded, color: Colors.white70, size: 20),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(width: 12),
+                              // Title + artist + offline badge
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            song.title,
+                                            style: TextStyle(
+                                              color: isCurrentlyPlaying ? AppColors.neonPink : AppColors.textPrimary,
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (isDownloaded) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                            decoration: BoxDecoration(
+                                              color: Colors.greenAccent.withAlpha(35),
+                                              borderRadius: BorderRadius.circular(4),
+                                              border: Border.all(color: Colors.greenAccent.withAlpha(90), width: 0.8),
+                                            ),
+                                            child: const Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(Icons.download_done_rounded, color: Colors.greenAccent, size: 10),
+                                                SizedBox(width: 3),
+                                                Text(
+                                                  'OFFLINE',
+                                                  style: TextStyle(
+                                                    color: Colors.greenAccent,
+                                                    fontSize: 8.5,
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ] else if (!isOnline) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                            decoration: BoxDecoration(
+                                              color: Colors.white10,
+                                              borderRadius: BorderRadius.circular(4),
+                                            ),
+                                            child: const Text(
+                                              'ONLINE ONLY',
+                                              style: TextStyle(
+                                                color: Colors.white54,
+                                                fontSize: 8.5,
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      song.artist,
+                                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              // Equalizer indicator if this song is playing
+                              if (isCurrentlyPlaying)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 8),
+                                  child: _MiniEqualizer(),
+                                ),
+                              // Options
+                              IconButton(
+                                icon: Icon(Icons.more_vert, color: AppColors.textSecondary),
+                                onPressed: () => _showSongOptions(context, song),
+                              ),
                             ],
                           ),
                         ),
-                        // Equalizer indicator if this song is playing
-                        if (isCurrentlyPlaying)
-                          const Padding(
-                            padding: EdgeInsets.only(right: 8),
-                            child: _MiniEqualizer(),
-                          ),
-                        // Options
-                        IconButton(
-                          icon: Icon(Icons.more_vert, color: AppColors.textSecondary),
-                          onPressed: () => _showSongOptions(context, song),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              },
-              childCount: _songs.length + (_hasMoreResults && widget.playlistId != null ? 1 : 0),
-            ),
+                      ),
+                    );
+                  },
+                  childCount: _songs.length + (_hasMoreResults && widget.playlistId != null ? 1 : 0),
+                ),
+              );
+            },
           ),
 
           const SliverToBoxAdapter(child: SizedBox(height: 100)),

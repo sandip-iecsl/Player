@@ -12,12 +12,52 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// YouTube URL Validation Pattern
-const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.|music\.)?(youtube\.com\/(watch\?v=|shorts\/|v\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_\-]{11})([^\s]*)$/;
+// YouTube URL Validation Pattern (supports watch, shorts, embed, youtu.be, music.youtube, and playlists/mixes)
+const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.|music\.)?(youtube\.com\/(watch\?v=|shorts\/|v\/|embed\/|playlist\?)|youtu\.be\/)([a-zA-Z0-9_\-\?&=]+)$/;
 
 // Path to bundled yt-dlp binary (Windows and Linux / Cloud Container)
 const LOCAL_YTDLP = path.join(__dirname, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
 const YTDLP_BIN = fs.existsSync(LOCAL_YTDLP) ? LOCAL_YTDLP : 'yt-dlp';
+
+// Helper to clean, sanitize, and re-format YouTube Mix / Radio & Standard URLs
+function normalizeYouTubeUrl(inputUrl) {
+  try {
+    const trimmed = inputUrl.trim();
+    const urlObj = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+    
+    // Check if link contains a Mix / Radio playlist (list starts with 'RD')
+    const listParam = urlObj.searchParams.get('list');
+    
+    if (listParam && listParam.startsWith('RD')) {
+      // Extract video ID from 'v' query or from RD suffix (RD_JL6JAf-HKw -> _JL6JAf-HKw)
+      let videoId = urlObj.searchParams.get('v');
+      if (!videoId) {
+        videoId = listParam.replace(/^RD/, '');
+      }
+      
+      // Reconstruct as a clean watch link with the Mix playlist parameter
+      return `https://www.youtube.com/watch?v=${videoId}&list=${listParam}`;
+    }
+
+    // Check if standard playlist link has a direct video parameter
+    if (urlObj.pathname.includes('playlist')) {
+      const v = urlObj.searchParams.get('v');
+      if (v) {
+        return `https://www.youtube.com/watch?v=${v}`;
+      }
+    }
+
+    // Strip unnecessary tracking parameters (e.g., playnext, si, feature, pp, index)
+    urlObj.searchParams.delete('playnext');
+    urlObj.searchParams.delete('si');
+    urlObj.searchParams.delete('feature');
+    urlObj.searchParams.delete('pp');
+    
+    return urlObj.toString();
+  } catch (err) {
+    return inputUrl; // Fallback to raw string if parsing fails
+  }
+}
 
 /**
  * Clean track title by stripping standard YouTube clutter
@@ -37,10 +77,16 @@ function cleanTrackTitle(rawTitle) {
  * Extract YouTube Video ID from any supported format
  */
 function extractVideoId(url) {
-  const match = url.match(YOUTUBE_REGEX);
-  if (match && match[5]) {
-    return match[5];
-  }
+  const normalized = normalizeYouTubeUrl(url);
+  const match1 = normalized.match(/(?:watch\?v=|youtu\.be\/|shorts\/|embed\/)([a-zA-Z0-9_\-]{11})/);
+  if (match1 && match1[1]) return match1[1];
+  
+  const match2 = url.match(/(?:list=RD_?)([a-zA-Z0-9_\-]{11})/);
+  if (match2 && match2[1]) return match2[1];
+
+  const match3 = url.match(/([a-zA-Z0-9_\-]{11})/);
+  if (match3 && match3[1]) return match3[1];
+  
   return null;
 }
 
@@ -81,12 +127,13 @@ app.post('/api/youtube/extract', async (req, res) => {
     }
 
     const trimmedUrl = url.trim();
-    if (!YOUTUBE_REGEX.test(trimmedUrl)) {
+    const cleanUrl = normalizeYouTubeUrl(trimmedUrl);
+    if (!YOUTUBE_REGEX.test(trimmedUrl) && !YOUTUBE_REGEX.test(cleanUrl)) {
       return res.status(400).json({ error: 'Provided URL is not a valid YouTube, YouTube Music, or youtu.be link' });
     }
 
-    const videoId = extractVideoId(trimmedUrl);
-    const targetUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : trimmedUrl;
+    const videoId = extractVideoId(cleanUrl) || extractVideoId(trimmedUrl);
+    const targetUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : cleanUrl;
 
     console.log(`[Extractor] 🔍 Resolving multi-format audio streams with yt-dlp for: ${targetUrl} (ID: ${videoId})`);
 
@@ -297,11 +344,12 @@ app.get('/api/youtube/download', async (req, res) => {
     }
 
     const trimmedUrl = rawUrl.trim();
-    if (!YOUTUBE_REGEX.test(trimmedUrl)) {
+    const cleanUrl = normalizeYouTubeUrl(trimmedUrl);
+    if (!YOUTUBE_REGEX.test(trimmedUrl) && !YOUTUBE_REGEX.test(cleanUrl)) {
       return res.status(400).json({ error: 'Provided URL is not a valid YouTube URL' });
     }
 
-    const videoId = extractVideoId(trimmedUrl) || 'audio_track';
+    const videoId = extractVideoId(cleanUrl) || extractVideoId(trimmedUrl) || 'audio_track';
     const targetUrl = `https://www.youtube.com/watch?v=${videoId}`;
     const customTitle = req.query.title ? cleanTrackTitle(req.query.title) : `yt_${videoId}`;
     const sanitizedFileName = encodeURIComponent(`${customTitle}.m4a`);

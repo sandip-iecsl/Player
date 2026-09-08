@@ -49,25 +49,9 @@ class Playlist {
     coverUrl: j['coverUrl'],
   );
 
-  static Map<String, dynamic> _songToJson(Song s) => {
-    'id': s.id,
-    'title': s.title,
-    'artist': s.artist,
-    'album': s.album,
-    'albumArt': s.albumArt,
-    'duration': s.duration.inSeconds,
-    'previewUrl': s.previewUrl,
-  };
+  static Map<String, dynamic> _songToJson(Song s) => s.toJson();
 
-  static Song _songFromJson(Map<String, dynamic> j) => Song(
-    id: j['id'] ?? '',
-    title: j['title'] ?? '',
-    artist: j['artist'] ?? '',
-    album: j['album'],
-    albumArt: j['albumArt'],
-    duration: Duration(seconds: j['duration'] ?? 0),
-    previewUrl: j['previewUrl'],
-  );
+  static Song _songFromJson(Map<String, dynamic> j) => Song.fromJson(j);
 }
 
 final playlistProvider = StateNotifierProvider<PlaylistNotifier, List<Playlist>>((ref) {

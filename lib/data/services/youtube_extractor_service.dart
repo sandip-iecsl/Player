@@ -44,23 +44,68 @@ class YouTubeExtractorService {
 
   /// Regex matching YouTube video URLs
   static final RegExp youtubeRegex = RegExp(
-    r'^(https?:\/\/)?(www\.|music\.)?(youtube\.com\/(watch\?v=|shorts\/|v\/|embed\/)|youtu\.be\/)([a-zA-Z0-9_\-]{11})([^\s]*)$',
+    r'^(https?:\/\/)?(www\.|music\.)?(youtube\.com\/(watch\?v=|shorts\/|v\/|embed\/|playlist\?)|youtu\.be\/)([a-zA-Z0-9_\-\?&=]+)$',
     caseSensitive: false,
   );
+
+  /// Helper to sanitize and normalize YouTube URLs (Mix / Radio RD lists, tracking parameters, etc.)
+  static String sanitizeYouTubeLink(String rawUrl) {
+    try {
+      final trimmed = rawUrl.trim();
+      if (trimmed.isEmpty) return rawUrl;
+      final uri = Uri.tryParse(trimmed.startsWith('http') ? trimmed : 'https://$trimmed');
+      if (uri == null) return trimmed;
+
+      final listParam = uri.queryParameters['list'];
+
+      // Handle dynamic Mix / Radio playlists (list=RD...)
+      if (listParam != null && listParam.startsWith('RD')) {
+        String? videoId = uri.queryParameters['v'];
+        if (videoId == null || videoId.isEmpty) {
+          // Extract video ID embedded in list ID: RD_JL6JAf-HKw -> _JL6JAf-HKw
+          videoId = listParam.replaceFirst(RegExp(r'^RD'), '');
+        }
+        return 'https://www.youtube.com/watch?v=$videoId&list=$listParam';
+      }
+
+      // If it's a playlist URL with a specific 'v' parameter
+      if (uri.path.contains('playlist') && uri.queryParameters.containsKey('v')) {
+        return 'https://www.youtube.com/watch?v=${uri.queryParameters['v']}';
+      }
+
+      // Rebuild standard URLs stripping tracking query params
+      final cleanQueryParams = Map<String, String>.from(uri.queryParameters)
+        ..remove('playnext')
+        ..remove('si')
+        ..remove('feature')
+        ..remove('pp')
+        ..remove('index');
+
+      return uri.replace(queryParameters: cleanQueryParams.isNotEmpty ? cleanQueryParams : null).toString();
+    } catch (_) {
+      return rawUrl.trim();
+    }
+  }
 
   /// Checks if a string is a valid YouTube URL
   static bool isYouTubeUrl(String input) {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return false;
-    return youtubeRegex.hasMatch(trimmed);
+    if (youtubeRegex.hasMatch(trimmed)) return true;
+    final sanitized = sanitizeYouTubeLink(trimmed);
+    return youtubeRegex.hasMatch(sanitized);
   }
 
   /// Extracts the 11-character video ID from a YouTube URL
   static String? extractVideoId(String input) {
-    final trimmed = input.trim();
-    final match = youtubeRegex.firstMatch(trimmed);
-    if (match != null && match.groupCount >= 5) {
-      return match.group(5);
+    final sanitized = sanitizeYouTubeLink(input);
+    final match = RegExp(r'(?:watch\?v=|youtu\.be\/|shorts\/|embed\/)([a-zA-Z0-9_\-]{11})').firstMatch(sanitized);
+    if (match != null && match.groupCount >= 1) {
+      return match.group(1);
+    }
+    final rawMatch = youtubeRegex.firstMatch(sanitized);
+    if (rawMatch != null && rawMatch.groupCount >= 5) {
+      return rawMatch.group(5);
     }
     return null;
   }
@@ -96,13 +141,14 @@ class YouTubeExtractorService {
     bool forceRefresh = false,
   }) async {
     final trimmedUrl = url.trim();
-    if (!isYouTubeUrl(trimmedUrl)) {
+    final sanitizedUrl = sanitizeYouTubeLink(trimmedUrl);
+    if (!isYouTubeUrl(trimmedUrl) && !isYouTubeUrl(sanitizedUrl)) {
       debugPrint('[YouTubeExtractor] ❌ Invalid YouTube URL: "$trimmedUrl"');
       return null;
     }
 
-    final videoId = extractVideoId(trimmedUrl);
-    final cacheKey = videoId != null ? 'yt_$videoId' : trimmedUrl;
+    final videoId = extractVideoId(sanitizedUrl) ?? extractVideoId(trimmedUrl);
+    final cacheKey = videoId != null ? 'yt_$videoId' : sanitizedUrl;
 
     // 1. Check local Hive cache
     if (!forceRefresh) {
@@ -119,7 +165,7 @@ class YouTubeExtractorService {
       return _inFlightExtractions[cacheKey]!;
     }
 
-    final future = _performExtractionWithFormats(trimmedUrl, videoId, cacheKey);
+    final future = _performExtractionWithFormats(sanitizedUrl, videoId, cacheKey);
     _inFlightExtractions[cacheKey] = future;
 
     try {

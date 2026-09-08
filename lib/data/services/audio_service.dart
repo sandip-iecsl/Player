@@ -510,11 +510,10 @@ class AudioServiceHandler extends BaseAudioHandler {
       return;
     }
 
-    // Step 4: Execute Infinite Autoplay Fallback
-    if (_context == PlaybackContext.album || _context == PlaybackContext.playlist) {
-      print('[Audio] 🎵 Album/Playlist ended - Starting radio mode');
-      _context = PlaybackContext.radio;
-      _playNextAlgorithmSong();
+    // Step 4: Execute Infinite Autoplay Fallback (Only for radio/search context)
+    if (_context == PlaybackContext.album || _context == PlaybackContext.playlist || _context == PlaybackContext.local) {
+      print('[Audio] ⏹ Playlist/Album/Local queue completed. End of queue reached.');
+      _audioPlayer.stop();
       return;
     }
 
@@ -1292,6 +1291,9 @@ class AudioServiceHandler extends BaseAudioHandler {
           _currentSongController.add(firstSong);
           await _playSong(firstSong);
         }
+      } else if (_context == PlaybackContext.album || _context == PlaybackContext.playlist || _context == PlaybackContext.local) {
+        print('[Audio] ⏹ Skip reached end of ${_context.name} queue.');
+        _audioPlayer.stop();
       } else {
         _playNextAlgorithmSong();
       }

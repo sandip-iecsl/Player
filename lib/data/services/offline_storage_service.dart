@@ -19,16 +19,24 @@ class OfflineStorageService {
 
   /// Check if a song is downloaded
   static bool isDownloaded(String songId) {
+    if (songId.isEmpty) return false;
     if (!Hive.isBoxOpen('offline_songs')) return false;
-    final box = Hive.box('offline_songs');
-    return box.containsKey(songId);
+    return getLocalPath(songId) != null;
   }
 
   /// Get local path for a downloaded song, or null if not downloaded
   static String? getLocalPath(String songId) {
+    if (songId.isEmpty) return null;
     if (!Hive.isBoxOpen('offline_songs')) return null;
     final box = Hive.box('offline_songs');
-    final data = box.get(songId) as Map?;
+    
+    Map? data = box.get(songId) as Map?;
+    if (data == null && songId.startsWith('yt_')) {
+      data = box.get(songId.replaceFirst('yt_', '')) as Map?;
+    } else if (data == null && !songId.startsWith('yt_')) {
+      data = box.get('yt_$songId') as Map?;
+    }
+
     if (data != null && data['localPath'] != null) {
       final file = File(data['localPath']);
       if (file.existsSync()) {

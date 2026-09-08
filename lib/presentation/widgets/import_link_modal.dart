@@ -99,7 +99,9 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
     final trimmed = url.trim();
     if (trimmed.isEmpty) return;
 
-    if (!YouTubeExtractorService.isYouTubeUrl(trimmed)) {
+    final sanitized = YouTubeExtractorService.sanitizeYouTubeLink(trimmed);
+
+    if (!YouTubeExtractorService.isYouTubeUrl(trimmed) && !YouTubeExtractorService.isYouTubeUrl(sanitized)) {
       setState(() {
         _errorMessage = 'Please enter a valid YouTube, YouTube Music, or youtu.be link';
         _extractedSong = null;
@@ -120,7 +122,7 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
     });
 
     try {
-      final result = await _extractor.extractTrackWithFormats(trimmed);
+      final result = await _extractor.extractTrackWithFormats(sanitized);
       if (mounted) {
         if (result != null) {
           // Select format according to saved preference
