@@ -164,6 +164,7 @@ void main() {
       expect(result.songs.first.id, equals('algolia_202'));
       expect(result.tier, equals(SearchTier.tier2Algolia));
 
+      await Future.delayed(const Duration(milliseconds: 100));
       coordinator.dispose();
     });
   });
