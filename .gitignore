@@ -48,3 +48,15 @@ app.*.map.json
 .env
 .env.local
 .env.*.local
+
+# Node modules
+node_modules/
+**/node_modules/
+package-lock.json
+**/package-lock.json
+
+# Scratch & temporary testing files
+scratch/
+scratch_*.dart
+test_*.dart
+*.log

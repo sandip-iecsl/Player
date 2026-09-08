@@ -7,7 +7,6 @@ import 'playlist_dialogs.dart';
 import 'package:palette_generator/palette_generator.dart';
 import 'default_album_art.dart';
 import 'enhanced_notification_controller.dart';
-import '../../data/services/always_on_display_service.dart';
 
 class MiniPlayer extends ConsumerStatefulWidget {
   final Song? currentSong;
@@ -28,14 +27,13 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
   Color? _backgroundColor;
   late AnimationController _slideController;
   late Animation<Offset> _slideAnimation;
-  bool _useEnhancedController = true;
+  final bool _useEnhancedController = true;
 
   @override
   void initState() {
     super.initState();
     _updatePalette();
     _setupAnimations();
-    _initializeAOD();
   }
 
   void _setupAnimations() {
@@ -56,13 +54,6 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
     }
   }
 
-  void _initializeAOD() async {
-    await AlwaysOnDisplayService.initialize();
-    if (widget.currentSong != null) {
-      await AlwaysOnDisplayService.enableMusicControlsOnAOD();
-    }
-  }
-
   @override
   void didUpdateWidget(MiniPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -72,10 +63,6 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
       if (widget.currentSong != null) {
         _updatePalette();
         _slideController.forward();
-        _updateAODInfo();
-        if (oldWidget.currentSong == null) {
-          Future.microtask(() => AlwaysOnDisplayService.enableMusicControlsOnAOD());
-        }
       } else {
         _slideController.reverse();
       }
@@ -101,26 +88,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
     } catch (_) {}
   }
 
-  void _updateAODInfo() {
-    final song = widget.currentSong;
-    if (song == null) return;
 
-    final currentPosition = ref.read(currentPositionProvider).value ?? Duration.zero;
-    final totalDuration = ref.read(currentDurationProvider).value ??
-                         song.duration ?? 
-                         const Duration(seconds: 1);
-    final isPlaying = ref.read(isPlayingProvider).value ?? false;
-
-    AlwaysOnDisplayService.updateMusicInfo(
-      title: song.title,
-      artist: song.artist,
-      album: song.album,
-      artworkUrl: song.albumArt,
-      isPlaying: isPlaying,
-      position: currentPosition,
-      duration: totalDuration,
-    );
-  }
 
   @override
   void dispose() {
@@ -130,12 +98,6 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<AsyncValue<bool>>(isPlayingProvider, (_, __) {
-      _updateAODInfo();
-    });
-    ref.listen<AsyncValue<Duration>>(currentPositionProvider, (_, __) {
-      _updateAODInfo();
-    });
 
     if (widget.currentSong == null) return const SizedBox.shrink();
 
@@ -258,7 +220,7 @@ class _MiniPlayerState extends ConsumerState<MiniPlayer>
                           icon: const Icon(Icons.add_circle_outline,
                               color: Colors.white, size: 28),
                           onPressed: () => PlaylistDialogs.showAddToPlaylist(
-                              context, ref, song!),
+                              context, ref, song),
                         ),
                         Stack(
                           alignment: Alignment.center,

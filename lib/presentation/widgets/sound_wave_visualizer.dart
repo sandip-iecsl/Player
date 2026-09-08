@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'dart:math' as math;
-import 'dart:ui' as ui;
 import 'dart:math' show sin, pi;
 
 class SoundWaveVisualizer extends StatefulWidget {

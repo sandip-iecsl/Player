@@ -606,6 +606,8 @@ class MLRecommendationEngine {
       previewUrl = highQuality['url'] ?? highQuality['link'];
     }
 
+    final String? language = json['language']?.toString();
+
     return Song(
       id: json['id']?.toString() ?? '',
       title: json['name']?.toString() ?? 'Unknown',
@@ -614,6 +616,7 @@ class MLRecommendationEngine {
       albumArt: albumArt,
       duration: Duration(seconds: int.tryParse(json['duration']?.toString() ?? '0') ?? 0),
       previewUrl: previewUrl,
+      language: language,
     );
   }
 

@@ -296,10 +296,15 @@ class SpotifyClientService {
   }
 
   /// Get tracks from a playlist
-  Future<List<SpotifyTrack>> getPlaylistTracks(String playlistId, {int limit = 50}) async {
+  Future<List<SpotifyTrack>> getPlaylistTracks(String playlistId, {int limit = 50, int offset = 0}) async {
     try {
       final res = await _dio.get('$_api/playlists/$playlistId/tracks',
-          queryParameters: {'limit': limit, 'market': 'IN', 'fields': 'items(track)'},
+          queryParameters: {
+            'limit': limit,
+            'offset': offset,
+            'market': 'IN',
+            'fields': 'items(track)'
+          },
           options: await _auth());
       if (res.statusCode == 200) {
         final items = res.data['items'] as List? ?? [];

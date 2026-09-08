@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../domain/entities/song.dart';
 import 'ml_recommendation_engine.dart';
-import 'queue_manager.dart';
 
 /// JioSaavn Adapter - Adapts JioSaavn/ML Engine to work with QueueManager
 /// This allows JioSaavn to use the same queue management as Spotify

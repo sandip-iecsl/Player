@@ -41,7 +41,7 @@ class _EnhancedNotificationControllerState extends ConsumerState<EnhancedNotific
   final AudioRecorder _micRecorder = AudioRecorder();
   double _beatIntensity = 0.0;
   double _micLevel = 0.0;
-  Color _dominantColor = const Color(0xFF1DB954);
+  final Color _dominantColor = const Color(0xFF1DB954);
   final List<double> _vizHeights = List.generate(20, (_) => 0.2);
 
   @override

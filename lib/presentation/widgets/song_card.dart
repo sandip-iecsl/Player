@@ -50,7 +50,7 @@ class SongCard extends StatelessWidget {
                         color: Colors.black.withValues(alpha: 0.45),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Center(
+                      child: Center(
                         child: EqualizerBars(
                           color: AppColors.neonPurple,
                           barCount: 4,
@@ -86,7 +86,7 @@ class SongCard extends StatelessWidget {
               song.artist,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 12,
                 color: AppColors.textSecondary,
               ),

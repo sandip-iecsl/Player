@@ -1,10 +1,13 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'secret_console_screen.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/theme_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../data/services/audio_service.dart'; // PlaybackContext
 import '../../data/services/spotify_client_service.dart';
-import '../providers/music_provider.dart';
 import '../providers/music_data_providers.dart';
 import '../providers/audio_provider.dart';
 import '../providers/history_provider.dart';
@@ -14,6 +17,9 @@ import '../../data/datasources/remote/multi_source_aggregator.dart';
 import 'package:dio/dio.dart';
 import 'playlist_screen.dart';
 import '../widgets/playlist_dialogs.dart';
+import '../../core/constants/app_colors.dart';
+import '../../features/admin/engines/security_engine.dart';
+import '../widgets/import_link_modal.dart';
 
 /// Decodes HTML entities in song titles from JioSaavn
 /// e.g. &quot; → " , &amp; → & , &#039; → '
@@ -42,14 +48,16 @@ class _SectionDef {
   final String title;
   final String query;
   final bool vertical;
-  const _SectionDef(this.emoji, this.title, this.query, {this.vertical = false});
+  const _SectionDef(this.emoji, this.title, this.query,
+      {this.vertical = false});
 }
 
 class _LoadedSection {
   final String title;
   final List<Song> songs;
   final bool vertical;
-  _LoadedSection({required this.title, required this.songs, required this.vertical});
+  _LoadedSection(
+      {required this.title, required this.songs, required this.vertical});
 }
 
 // ── 60+ rotating section definitions ─────────────────────────────────────────
@@ -100,8 +108,10 @@ const _allSections = [
   _SectionDef('💫', 'Soulful Sufi', 'rahat fateh ali'),
   _SectionDef('🔥', 'Trending Global', 'trending english'),
   _SectionDef('🧘', 'Yoga Music', 'yoga indian'),
-  _SectionDef('🎭', 'Bollywood Drama', 'emotional dramatic bollywood background music'),
-  _SectionDef('🎤', 'Mohammed Rafi', 'mohammed rafi classic golden era', vertical: true),
+  _SectionDef(
+      '🎭', 'Bollywood Drama', 'emotional dramatic bollywood background music'),
+  _SectionDef('🎤', 'Mohammed Rafi', 'mohammed rafi classic golden era',
+      vertical: true),
   _SectionDef('🌸', 'Spring Songs', 'spring cheerful happy hindi songs'),
   _SectionDef('🚀', 'Future Bass', 'future bass electronic hindi remix'),
   _SectionDef('💖', 'Propose Songs', 'romantic propose love confession hindi'),
@@ -114,7 +124,8 @@ const _allSections = [
   _SectionDef('🎤', 'Jubin Nautiyal', 'jubin nautiyal best romantic songs'),
   _SectionDef('🔮', 'Psychedelic', 'psychedelic trance indian fusion music'),
   _SectionDef('🌻', 'Folk India', 'indian folk music various languages'),
-  _SectionDef('🎙', 'Lata Mangeshkar', 'lata mangeshkar golden voice classic', vertical: true),
+  _SectionDef('🎙', 'Lata Mangeshkar', 'lata mangeshkar golden voice classic',
+      vertical: true),
   _SectionDef('🥳', 'Party 2025', 'party banger hindi english remix 2025'),
 ];
 
@@ -137,14 +148,47 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   late final MultiSourceAggregator _agg;
 
   // Global dedup set — tracks song IDs and normalized titles seen across ALL sections
-  final _globalSeenIds     = <String>{};
-  final _globalSeenTitles  = <String>{};
+  final _globalSeenIds = <String>{};
+  final _globalSeenTitles = <String>{};
+
+  SharedPreferences? _prefs;
+  Map<String, dynamic> _appConfig = {}; // cached from app_config/map_settings
+  int _logoTapCount = 0;
+  DateTime? _lastLogoTapTime;
+
+  Future<void> _initPrefs() async {
+    _prefs = await SharedPreferences.getInstance();
+    if (mounted) setState(() {});
+    // Fetch app_config in background so header always shows the live creatorName
+    _fetchAppConfig();
+  }
+
+  Future<void> _fetchAppConfig() async {
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('app_config')
+          .doc('map_settings')
+          .get(const GetOptions(source: Source.serverAndCache));
+      if (doc.exists && doc.data() != null && mounted) {
+        setState(() => _appConfig = Map<String, dynamic>.from(doc.data()!));
+      }
+    } catch (_) {}
+  }
 
   /// Deduplicate songs against the global seen set
   List<Song> _globalDedup(List<Song> songs) {
     final result = <Song>[];
     for (final song in songs) {
       if (song.previewUrl == null || song.previewUrl!.isEmpty) continue;
+
+      final lowerText = '${song.title} ${song.artist}'.toLowerCase();
+      if (lowerText.contains('michael jackson') ||
+          lowerText.contains('michel jacson') ||
+          lowerText.contains('english rap') ||
+          lowerText.contains('pista')) {
+        continue;
+      }
+
       // Normalize title: lowercase, strip parens/brackets, keep alphanumeric
       final titleKey = song.title
           .toLowerCase()
@@ -165,6 +209,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _initPrefs();
 
     // Shuffle the section queue so every session feels fresh
     _queue = List<_SectionDef>.from(_allSections)..shuffle(Random());
@@ -181,7 +226,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _loadNextSection(1);
     _loadNextSection(2);
     _nextIdx = 3;
-
 
     // Staggered provider activation to prevent BLASTBufferQueue overflow
     Future.delayed(const Duration(milliseconds: 300), () {
@@ -225,35 +269,40 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     try {
       // Enhanced query with user preference consideration
       String enhancedQuery = def.query;
-      
+
       // Add contextual enhancement based on time and user history
       final recentlyPlayed = ref.read(recentlyPlayedProvider);
       if (recentlyPlayed.isNotEmpty && Random().nextBool()) {
-        final recentArtist = recentlyPlayed.first.artist.split(',').first.trim();
+        final recentArtist =
+            recentlyPlayed.first.artist.split(',').first.trim();
         if (def.query.contains('hindi') || def.query.contains('bollywood')) {
           enhancedQuery = '$enhancedQuery $recentArtist';
         }
       }
-      
-      final songs = await _agg.fetchInfiniteSection(enhancedQuery, sectionIndex);
-      
+
+      final songs =
+          await _agg.fetchInfiniteSection(enhancedQuery, sectionIndex);
+
       // Decode HTML entities in titles
-      final cleaned = songs.map((s) => Song(
-        id: s.id,
-        title: _decodeHtml(s.title),
-        artist: _decodeHtml(s.artist),
-        album: s.album != null ? _decodeHtml(s.album!) : null,
-        albumArt: s.albumArt,
-        duration: s.duration,
-        previewUrl: s.previewUrl,
-      )).toList();
+      final cleaned = songs
+          .map((s) => Song(
+                id: s.id,
+                title: _decodeHtml(s.title),
+                artist: _decodeHtml(s.artist),
+                album: s.album != null ? _decodeHtml(s.album!) : null,
+                albumArt: s.albumArt,
+                duration: s.duration,
+                previewUrl: s.previewUrl,
+              ))
+          .toList();
 
       if (mounted && cleaned.isNotEmpty) {
         // Apply smart shuffling to loaded songs
-        final shuffledSongs = _applySmartShuffleToSection(cleaned, recentlyPlayed);
+        final shuffledSongs =
+            _applySmartShuffleToSection(cleaned, recentlyPlayed);
         // Deduplicate against all previously loaded sections
         final dedupedSongs = _globalDedup(shuffledSongs);
-        
+
         if (dedupedSongs.isNotEmpty) {
           setState(() {
             _loaded.add(_LoadedSection(
@@ -270,50 +319,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// Apply smart shuffling to a section based on user preferences
-  List<Song> _applySmartShuffleToSection(List<Song> songs, List<Song> recentlyPlayed) {
+  List<Song> _applySmartShuffleToSection(
+      List<Song> songs, List<Song> recentlyPlayed) {
     if (songs.isEmpty) return songs;
-    
+
     final shuffled = List<Song>.from(songs);
     final random = Random();
-    
+
     // Extract preferred artists from recent plays
     final preferredArtists = <String>{};
     for (final song in recentlyPlayed.take(5)) {
       preferredArtists.add(song.artist.toLowerCase());
     }
-    
+
     // Sort with preference bias
     shuffled.sort((a, b) {
       final aPreferred = preferredArtists.contains(a.artist.toLowerCase());
       final bPreferred = preferredArtists.contains(b.artist.toLowerCase());
-      
+
       if (aPreferred && !bPreferred) return -1;
       if (!aPreferred && bPreferred) return 1;
-      
+
       // Add randomness for variety
       return random.nextBool() ? -1 : 1;
     });
-    
+
     return shuffled;
   }
 
-
   @override
   Widget build(BuildContext context) {
-    final trendingMusic   = ref.watch(trendingMusicProvider);
-    final recentlyPlayed  = ref.watch(recentlyPlayedProvider);
-    final hitsHindi       = _wave2 ? ref.watch(hitsHindiProvider) : null;
-    final recommendations = _wave2 ? ref.watch(personalizedFromHistoryProvider) : null;
-    final todaysBiggest   = _wave3 ? ref.watch(todaysBiggestHitsProvider) : null;
-    final newReleases     = _wave3 ? ref.watch(newReleasesProvider) : null;
-    final featuredPlaylists = _wave3 ? ref.watch(featuredPlaylistsProvider) : null;
+    ref.watch(themeModeProvider);
+    ref.watch(themeColorProvider);
+    final trendingMusic = ref.watch(trendingMusicProvider);
+    final recentlyPlayed = ref.watch(recentlyPlayedProvider);
+    final hitsHindi = _wave2 ? ref.watch(hitsHindiProvider) : null;
+    final recommendations =
+        _wave2 ? ref.watch(personalizedFromHistoryProvider) : null;
+    final todaysBiggest = _wave3 ? ref.watch(todaysBiggestHitsProvider) : null;
+    final newReleases = _wave3 ? ref.watch(newReleasesProvider) : null;
+    final featuredPlaylists =
+        _wave3 ? ref.watch(featuredPlaylistsProvider) : null;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.deepSpaceBlack,
       body: SafeArea(
         child: RefreshIndicator(
-          color: const Color(0xFF1DB954),
-          backgroundColor: const Color(0xFF282828),
+          color: AppColors.neonPink,
+          backgroundColor: AppColors.deepSpaceBlackLight,
           onRefresh: _onRefresh,
           child: CustomScrollView(
             controller: _scrollController,
@@ -325,7 +378,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               // ── Quick grid (recently played) ──────────────────────────
               if (recentlyPlayed.isNotEmpty)
                 SliverToBoxAdapter(
-                  child: RepaintBoundary(child: _buildQuickGrid(recentlyPlayed)),
+                  child:
+                      RepaintBoundary(child: _buildQuickGrid(recentlyPlayed)),
                 ),
 
               // ── Wave 1: Trending ──────────────────────────────────────
@@ -347,7 +401,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               if (_wave2 && recommendations != null)
                 SliverToBoxAdapter(
                   child: RepaintBoundary(
-                    child: _buildHorizSection('🎯 Made for You', recommendations),
+                    child:
+                        _buildHorizSection('🎯 Made for You', recommendations),
                   ),
                 ),
 
@@ -355,7 +410,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               if (_wave3 && todaysBiggest != null)
                 SliverToBoxAdapter(
                   child: RepaintBoundary(
-                    child: _buildHorizSection("🏆 Today's Biggest Hits", todaysBiggest),
+                    child: _buildHorizSection(
+                        "🏆 Today's Biggest Hits", todaysBiggest),
                   ),
                 ),
 
@@ -387,14 +443,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               // ── Infinite loading indicator ────────────────────────────
               SliverToBoxAdapter(
                 child: _isLoadingMore
-                    ? const Padding(
+                    ? Padding(
                         padding: EdgeInsets.symmetric(vertical: 32),
                         child: Center(
                           child: SizedBox(
                             width: 26,
                             height: 26,
                             child: CircularProgressIndicator(
-                              color: Color(0xFF1DB954),
+                              color: AppColors.neonPink,
                               strokeWidth: 2.5,
                             ),
                           ),
@@ -412,9 +468,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // ── Pull to refresh ────────────────────────────────────────────────────────
 
   Future<void> _onRefresh() async {
+    // Refresh app_config so creatorName and settings are always current
+    _fetchAppConfig();
+
     // Smart refresh with enhanced shuffling
     invalidateAllMusicProviders(ref);
-    
+
     setState(() {
       _loaded.clear();
       _nextIdx = 0;
@@ -425,32 +484,32 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _wave2 = false;
       _wave3 = false;
     });
-    
+
     // Load fresh sections with staggered timing for smooth experience
     _loadNextSection(0);
     _loadNextSection(1);
     _loadNextSection(2);
     _nextIdx = 3;
-    
+
     // Staggered wave activation for better UX
     await Future.delayed(const Duration(milliseconds: 300));
     if (mounted) setState(() => _wave2 = true);
-    
+
     await Future.delayed(const Duration(milliseconds: 400));
     if (mounted) setState(() => _wave3 = true);
-    
+
     // Show refresh feedback
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Row(
+          content: Row(
             children: [
-              Icon(Icons.refresh, color: Colors.white, size: 16),
+              Icon(Icons.refresh, color: AppColors.textPrimary, size: 16),
               SizedBox(width: 8),
               Text('Fresh music loaded based on your taste!'),
             ],
           ),
-          backgroundColor: const Color(0xFF1DB954),
+          backgroundColor: AppColors.neonPink,
           duration: const Duration(seconds: 2),
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
@@ -459,127 +518,339 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  // ── Widgets ────────────────────────────────────────────────────────────────
+  void _onLogoTap() async {
+    final now = DateTime.now();
+    if (_lastLogoTapTime == null ||
+        now.difference(_lastLogoTapTime!) > const Duration(seconds: 2)) {
+      _logoTapCount = 1;
+    } else {
+      _logoTapCount++;
+    }
+    _lastLogoTapTime = now;
 
-  Widget _buildHeader() => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+    if (_logoTapCount >= 7) {
+      _logoTapCount = 0;
+      final prefs = await SharedPreferences.getInstance();
+      final lastAccessMs = prefs.getInt('last_console_access_timestamp') ?? 0;
+      final lastAccess = DateTime.fromMillisecondsSinceEpoch(lastAccessMs);
+      
+      if (lastAccessMs > 0 && now.difference(lastAccess).inHours < 24) {
+        _openSecretConsoleDirectly();
+      } else {
+        _showSecretPasswordDialog();
+      }
+    }
+  }
+
+  void _openSecretConsoleDirectly() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('last_console_access_timestamp', DateTime.now().millisecondsSinceEpoch);
+
+    if (mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const SecretConsoleScreen()),
+      ).then((value) {
+        if (value == true && mounted) {
+          setState(() {}); // Refresh home screen to apply overrides immediately
+        }
+      });
+    }
+  }
+
+  void _showSecretPasswordDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.deepSpaceBlackLight,
+        title: const Text('Developer Console',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── App icon ──────────────────────────────────────────────────
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                    colors: [Color(0xFF1DB954), Color(0xFF0A8A34)]),
-                borderRadius: BorderRadius.circular(12),
+            const Text('Enter Developer Passcode:',
+                style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              obscureText: true,
+              style: const TextStyle(color: Colors.white),
+              decoration: InputDecoration(
+                hintText: 'Passcode',
+                hintStyle:
+                    TextStyle(color: AppColors.textSecondary.withOpacity(0.4)),
+                focusedBorder: UnderlineInputBorder(
+                    borderSide: BorderSide(color: AppColors.neonPink)),
               ),
-              child: const Icon(Icons.headphones_rounded,
-                  color: Colors.white, size: 22),
-            ),
-            const SizedBox(width: 12),
-
-            // ── App name + taglines ───────────────────────────────────────
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('Aura Player',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.bold)),
-                  const Text('Vibe with your music',
-                      style: TextStyle(color: Colors.grey, fontSize: 11)),
-                  ShaderMask(
-                    shaderCallback: (bounds) => const LinearGradient(
-                      colors: [Color(0xFF1DB954), Color(0xFF00C853)],
-                    ).createShader(bounds),
-                    child: const Text(
-                      'Made by Sandip ✦',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.3),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Social icons ──────────────────────────────────────────────
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // LinkedIn
-                GestureDetector(
-                  onTap: () => _launchUrl(
-                      'https://www.linkedin.com/in/sandipan-bhunia/'),
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF0A66C2),
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF0A66C2).withOpacity(0.4),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'in',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                          fontStyle: FontStyle.italic,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-
-                // WhatsApp / Message
-                GestureDetector(
-                  onTap: () => _launchUrl('sms:8972966158'),
-                  child: Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF25D366), Color(0xFF128C7E)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(8),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF25D366).withOpacity(0.4),
-                          blurRadius: 8,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: const Icon(
-                      Icons.chat_rounded,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                  ),
-                ),
-              ],
             ),
           ],
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text('Cancel',
+                style: TextStyle(color: AppColors.textSecondary)),
+          ),
+          TextButton(
+            onPressed: () async {
+              final passwordEntered = controller.text.trim();
+              // Validate directly against Firestore — no hardcoded fallback
+              final isValid = await SecurityEngine()
+                  .validateSecretConsolePasscode(passwordEntered);
+
+              if (isValid) {
+                if (ctx.mounted) {
+                  Navigator.pop(ctx);
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setInt('last_console_access_timestamp',
+                      DateTime.now().millisecondsSinceEpoch);
+
+                  if (mounted) {
+                    Navigator.of(context, rootNavigator: true).push(
+                      MaterialPageRoute(
+                          builder: (context) => const SecretConsoleScreen()),
+                    ).then((value) {
+                      if (value == true && mounted) {
+                        setState(() {});
+                      }
+                    });
+                  }
+                }
+              } else {
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(
+                        content: Text('Incorrect Passcode!'),
+                        backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
+            child: Text('Enter',
+                style: TextStyle(
+                    color: AppColors.neonPink, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Widgets ────────────────────────────────────────────────────────────────
+
+  Widget _buildHeader() => Builder(
+        builder: (context) {
+          final localOverrideEnabled =
+              _prefs?.getBool('local_override_enabled') ?? false;
+
+          // Resolve display name:
+          // Local override → app_config creatorName → user_name prefs → fallback
+          final savedDisplayName =
+              _prefs?.getString('user_name')?.trim() ?? '';
+          final firestoreCreatorName =
+              _appConfig['creatorName']?.toString().trim() ?? '';
+          final overrideName =
+              _prefs?.getString('local_override_creator_name')?.trim() ?? '';
+
+          String creatorName;
+          if (localOverrideEnabled && overrideName.isNotEmpty) {
+            creatorName = overrideName;
+          } else if (firestoreCreatorName.isNotEmpty) {
+            creatorName = firestoreCreatorName;
+          } else if (savedDisplayName.isNotEmpty) {
+            creatorName = savedDisplayName;
+          } else {
+            creatorName = 'Unknown User';
+          }
+
+          // Resolve visibility flags from app_config, with local override
+          final showLinkedin = localOverrideEnabled
+              ? (_prefs?.getBool('local_override_show_linkedin') ?? true)
+              : ((_appConfig['showLinkedin'] ?? true) as bool);
+
+          final showContact = localOverrideEnabled
+              ? (_prefs?.getBool('local_override_show_contact') ?? true)
+              : ((_appConfig['showContact'] ?? true) as bool);
+
+          final linkedinUrl = localOverrideEnabled
+              ? (_prefs?.getString('local_override_linkedin_url')
+                    ?.isNotEmpty == true
+                  ? _prefs!.getString('local_override_linkedin_url')!
+                  : _appConfig['linkedinUrl']?.toString() ??
+                      'https://www.linkedin.com/in/sandipan-bhunia/')
+              : (_appConfig['linkedinUrl']?.toString() ??
+                  'https://www.linkedin.com/in/sandipan-bhunia/');
+
+          final contactNumber = localOverrideEnabled
+              ? (_prefs?.getString('local_override_contact_number')
+                    ?.isNotEmpty == true
+                  ? _prefs!.getString('local_override_contact_number')!
+                  : _appConfig['contactNumber']?.toString() ?? '8972966158')
+              : (_appConfig['contactNumber']?.toString() ?? '8972966158');
+
+          final items = <Widget>[];
+
+          // YouTube Import Link Button
+          items.add(
+            GestureDetector(
+              onTap: () => ImportLinkModal.show(context),
+              child: Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: Colors.redAccent.withOpacity(0.85),
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.redAccent.withOpacity(0.4),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Center(
+                  child: Icon(Icons.link_rounded, color: Colors.white, size: 18),
+                ),
+              ),
+            ),
+          );
+          items.add(const SizedBox(width: 8));
+
+          // LinkedIn
+          if (showLinkedin) {
+            items.add(
+              GestureDetector(
+                onTap: () => _launchUrl(linkedinUrl),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0A66C2),
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0A66C2).withOpacity(0.4),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'in',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        fontStyle: FontStyle.italic,
+                        letterSpacing: -0.5,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }
+
+          if (showLinkedin && showContact) {
+            items.add(const SizedBox(width: 8));
+          }
+
+          // Contact (SMS)
+          if (showContact) {
+            items.add(
+              GestureDetector(
+                onTap: () => _launchUrl('sms:$contactNumber'),
+                child: Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF25D366),
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF25D366).withOpacity(0.4),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child:
+                        Icon(Icons.chat_rounded, color: Colors.white, size: 18),
+                  ),
+                ),
+              ),
+            );
+          }
+
+          if (showLinkedin || showContact) {
+            items.add(const SizedBox(width: 8));
+          }
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 18),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // ── App icon ──────────────────────────────────────────────────
+                GestureDetector(
+                  onTap: _onLogoTap,
+                  child: Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                          colors: [AppColors.neonPink, AppColors.neonCoral]),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.headphones_rounded,
+                        color: AppColors.textPrimary, size: 22),
+                  ),
+                ),
+                const SizedBox(width: 12),
+
+                // ── App name + taglines ───────────────────────────────────────
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Aura Player',
+                          style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold)),
+                      Text('Vibe with your music',
+                          style: TextStyle(
+                              color: AppColors.textSecondary, fontSize: 11)),
+                      ShaderMask(
+                        shaderCallback: (bounds) => LinearGradient(
+                          colors: [AppColors.neonPink, AppColors.neonCoral],
+                        ).createShader(bounds),
+                        child: Text(
+                          'Made by $creatorName ✦',
+                          style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 0.3),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: items,
+                ),
+              ],
+            ),
+          );
+        },
       );
 
   Future<void> _launchUrl(String url) async {
@@ -596,47 +867,56 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2, childAspectRatio: 3.5,
-          crossAxisSpacing: 8, mainAxisSpacing: 8,
+          crossAxisCount: 2,
+          childAspectRatio: 3.5,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
         ),
         itemCount: shown.length,
         itemBuilder: (context, i) {
           final song = shown[i];
-          final playing = ref.watch(currentSongProvider).valueOrNull?.id == song.id;
+          final playing =
+              ref.watch(currentSongProvider).valueOrNull?.id == song.id;
           return Material(
             color: playing
-                ? const Color(0xFF1DB954).withValues(alpha: 0.18)
-                : const Color(0xFF1E1E1E),
+                ? AppColors.neonPink.withValues(alpha: 0.18)
+                : AppColors.deepSpaceBlackLight,
             borderRadius: BorderRadius.circular(6),
             child: InkWell(
               borderRadius: BorderRadius.circular(6),
               onTap: () {
                 ref.read(audioServiceProvider).loadQueue(
-                  songs,
-                  startIndex: i,
-                  context: PlaybackContext.radio, // home sections → autoplay after queue ends
-                );
+                      songs,
+                      startIndex: i,
+                      context: PlaybackContext
+                          .radio, // home sections → autoplay after queue ends
+                    );
                 ref.read(recentlyPlayedProvider.notifier).add(song);
               },
               child: Row(children: [
                 ClipRRect(
                   borderRadius: const BorderRadius.only(
-                      topLeft: Radius.circular(6), bottomLeft: Radius.circular(6)),
+                      topLeft: Radius.circular(6),
+                      bottomLeft: Radius.circular(6)),
                   child: _img(song.albumArt, 52, 52),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(song.title,
                       style: TextStyle(
-                          color: playing ? const Color(0xFF1DB954) : Colors.white,
-                          fontSize: 12, fontWeight: FontWeight.w600),
-                      maxLines: 2, overflow: TextOverflow.ellipsis),
+                          color: playing
+                              ? AppColors.neonPink
+                              : AppColors.textPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis),
                 ),
                 if (playing)
-                  const Padding(
+                  Padding(
                     padding: EdgeInsets.only(right: 4),
                     child: Icon(Icons.equalizer_rounded,
-                        color: Color(0xFF1DB954), size: 14),
+                        color: AppColors.neonPink, size: 14),
                   ),
               ]),
             ),
@@ -673,7 +953,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 final playing =
                     ref.watch(currentSongProvider).valueOrNull?.id == song.id;
                 return GestureDetector(
-                  onTap: () => Navigator.push(context,
+                  onTap: () => Navigator.push(
+                      context,
                       MaterialPageRoute(
                         builder: (_) => PlaylistScreen(
                           playlistTitle: title,
@@ -700,22 +981,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                     color: Colors.black54,
                                     borderRadius: BorderRadius.circular(10),
                                   ),
-                                  child: const Icon(Icons.equalizer_rounded,
-                                      color: Color(0xFF1DB954), size: 34),
+                                  child: Icon(Icons.equalizer_rounded,
+                                      color: AppColors.neonPink, size: 34),
                                 ),
                               ),
                           ]),
                           const SizedBox(height: 6),
                           Text(song.title,
-                              style: const TextStyle(
-                                  color: Colors.white,
+                              style: TextStyle(
+                                  color: AppColors.textPrimary,
                                   fontSize: 12,
                                   fontWeight: FontWeight.w600),
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
                           Text(song.artist,
-                              style:
-                                  const TextStyle(color: Colors.grey, fontSize: 11),
-                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                              style: TextStyle(
+                                  color: AppColors.textSecondary, fontSize: 11),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis),
                         ],
                       ),
                     ),
@@ -746,27 +1029,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               title: Text(song.title,
                   style: TextStyle(
                       color:
-                          playing ? const Color(0xFF1DB954) : Colors.white,
+                          playing ? AppColors.neonPink : AppColors.textPrimary,
                       fontWeight: FontWeight.w500),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
               subtitle: Text(song.artist,
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
-                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                  style:
+                      TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
               trailing: playing
-                  ? const Icon(Icons.equalizer_rounded,
-                      color: Color(0xFF1DB954))
+                  ? Icon(Icons.equalizer_rounded, color: AppColors.neonPink)
                   : IconButton(
                       icon:
-                          const Icon(Icons.more_vert, color: Colors.grey),
+                          Icon(Icons.more_vert, color: AppColors.textSecondary),
                       onPressed: () =>
                           PlaylistDialogs.showSongOptions(context, ref, song),
                     ),
               onTap: () {
                 ref.read(audioServiceProvider).loadQueue(
-                songs,
-                startIndex: songs.indexOf(song),
-                context: PlaybackContext.radio,
-              );
+                      songs,
+                      startIndex: songs.indexOf(song),
+                      context: PlaybackContext.radio,
+                    );
                 ref.read(recentlyPlayedProvider.notifier).add(song);
               },
             );
@@ -796,15 +1081,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     return GestureDetector(
                       onTap: () {
                         // Load playlist songs and navigate
-                        ref.read(playlistSongsProvider(playlist.id).future).then((songs) {
+                        ref
+                            .read(playlistSongsProvider(playlist.id).future)
+                            .then((songs) {
                           if (songs.isNotEmpty && context.mounted) {
-                            Navigator.push(context, MaterialPageRoute(
-                              builder: (_) => PlaylistScreen(
-                                playlistTitle: playlist.name,
-                                coverUrl: playlist.imageUrl,
-                                songs: songs,
-                              ),
-                            ));
+                            Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => PlaylistScreen(
+                                    playlistTitle: playlist.name,
+                                    coverUrl: playlist.imageUrl,
+                                    songs: songs,
+                                  ),
+                                ));
                           }
                         });
                       },
@@ -821,8 +1110,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               ),
                               const SizedBox(height: 6),
                               Text(playlist.name,
-                                  style: const TextStyle(
-                                      color: Colors.white,
+                                  style: TextStyle(
+                                      color: AppColors.textPrimary,
                                       fontSize: 12,
                                       fontWeight: FontWeight.w600),
                                   maxLines: 1,
@@ -830,8 +1119,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                               if (playlist.description != null &&
                                   playlist.description!.isNotEmpty)
                                 Text(playlist.description!,
-                                    style: const TextStyle(
-                                        color: Colors.grey, fontSize: 11),
+                                    style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 11),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis),
                             ],
@@ -854,13 +1144,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _secTitle(title),
-          const SizedBox(
+          SizedBox(
             height: 188,
             child: Center(
               child: SizedBox(
-                width: 22, height: 22,
+                width: 22,
+                height: 22,
                 child: CircularProgressIndicator(
-                    color: Color(0xFF1DB954), strokeWidth: 2),
+                    color: AppColors.neonPink, strokeWidth: 2),
               ),
             ),
           ),
@@ -871,8 +1162,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _secTitle(String title) => Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
         child: Text(title,
-            style: const TextStyle(
-                color: Colors.white,
+            style: TextStyle(
+                color: AppColors.textPrimary,
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
                 letterSpacing: -0.3)),
@@ -882,26 +1173,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   Widget _img(String? url, double w, double h) {
     if (url == null || url.isEmpty) {
       return Container(
-        width: w, height: h, color: const Color(0xFF2A2A2A),
-        child: Icon(Icons.music_note, color: Colors.white24, size: w * 0.4),
+        width: w,
+        height: h,
+        color: AppColors.deepSpaceBlackLight,
+        child: Icon(Icons.music_note, color: AppColors.divider, size: w * 0.4),
       );
     }
     return Image.network(
-      url, width: w, height: h, fit: BoxFit.cover,
+      url,
+      width: w,
+      height: h,
+      fit: BoxFit.cover,
       cacheWidth: (w * 1.5).toInt(),
       cacheHeight: (h * 1.5).toInt(),
       errorBuilder: (_, __, ___) => Container(
-        width: w, height: h, color: const Color(0xFF2A2A2A),
-        child: Icon(Icons.music_note, color: Colors.white24, size: w * 0.4),
+        width: w,
+        height: h,
+        color: AppColors.deepSpaceBlackLight,
+        child: Icon(Icons.music_note, color: AppColors.divider, size: w * 0.4),
       ),
       loadingBuilder: (_, child, prog) => prog == null
           ? child
           : Container(
-              width: w, height: h, color: const Color(0xFF1E1E1E),
-              child: const Center(
-                child: SizedBox(width: 14, height: 14,
-                  child: CircularProgressIndicator(
-                      color: Color(0xFF1DB954), strokeWidth: 1.5)),
+              width: w,
+              height: h,
+              color: AppColors.deepSpaceBlackLighter,
+              child: Center(
+                child: SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                        color: AppColors.neonPink, strokeWidth: 1.5)),
               ),
             ),
     );

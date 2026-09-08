@@ -6,24 +6,41 @@ import '../providers/local_music_provider.dart';
 import '../providers/history_provider.dart';
 import '../../domain/entities/song.dart';
 import '../widgets/playlist_dialogs.dart';
+import '../../core/constants/app_colors.dart';
 
+import '../providers/theme_provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'secret_configuration_screen.dart';
+import '../../features/admin/engines/security_engine.dart';
 class LocalMusicScreen extends ConsumerWidget {
   const LocalMusicScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(themeModeProvider);
+    ref.watch(themeColorProvider);
     final hasPermission = ref.watch(localPermissionProvider);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.deepSpaceBlack,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        title: const Text('Local Music',
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        backgroundColor: AppColors.deepSpaceBlack,
+        leading: GestureDetector(
+          onTap: () {}, // Camouflage
+          onLongPress: () => _showSecretPasswordDialog(context),
+          child: Container(
+            alignment: Alignment.topLeft,
+            padding: const EdgeInsets.all(4),
+            child: Icon(Icons.circle, size: 12, color: Colors.white.withOpacity(0.02)),
+          ),
+        ),
+        title: Text('Local Music',
+            style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
         actions: [
           if (hasPermission)
             IconButton(
-              icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+              icon: Icon(Icons.refresh_rounded, color: AppColors.textPrimary),
               onPressed: () {
                 ref.invalidate(allLocalSongsProvider);
                 ref.invalidate(localFoldersProvider);
@@ -53,22 +70,22 @@ class _PermissionPrompt extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
-                color: const Color(0xFF1E1E1E),
+                color: AppColors.deepSpaceBlackLight,
                 borderRadius: BorderRadius.circular(20)),
-            child: const Icon(Icons.folder_rounded,
-                color: Color(0xFF1DB954), size: 64),
+            child: Icon(Icons.folder_rounded,
+                color: AppColors.neonPink, size: 64),
           ),
           const SizedBox(height: 24),
-          const Text('Access Your Music',
+          Text('Access Your Music',
               style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                   fontSize: 22,
                   fontWeight: FontWeight.bold)),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Allow Aura Player to read your device storage and play local music.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey, fontSize: 14, height: 1.5),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
           ),
           const SizedBox(height: 28),
           SizedBox(
@@ -76,8 +93,8 @@ class _PermissionPrompt extends StatelessWidget {
             child: ElevatedButton(
               onPressed: onGrant,
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1DB954),
-                foregroundColor: Colors.black,
+                backgroundColor: AppColors.neonPink,
+                foregroundColor: AppColors.deepSpaceBlack,
                 padding: const EdgeInsets.symmetric(vertical: 16),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30)),
@@ -100,20 +117,20 @@ class _FolderView extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final foldersAsync = ref.watch(localFoldersProvider);
     return foldersAsync.when(
-      loading: () => const Center(
-          child: CircularProgressIndicator(color: Color(0xFF1DB954))),
+      loading: () => Center(
+          child: CircularProgressIndicator(color: AppColors.neonPink)),
       error: (e, _) => Center(
-          child: Text('Error: $e', style: const TextStyle(color: Colors.red))),
+          child: Text('Error: $e', style: TextStyle(color: AppColors.neonCoral))),
       data: (folders) => folders.isEmpty
-          ? const Center(
+          ? Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.music_off_rounded, color: Colors.grey, size: 64),
+                Icon(Icons.music_off_rounded, color: AppColors.textSecondary, size: 64),
                 SizedBox(height: 16),
                 Text('No music found on device',
-                    style: TextStyle(color: Colors.grey, fontSize: 16)),
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
                 SizedBox(height: 8),
                 Text('Add MP3/FLAC files to your Music folder',
-                    style: TextStyle(color: Colors.grey, fontSize: 13)),
+                    style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
               ]),
             )
           : GridView.builder(
@@ -145,7 +162,7 @@ class _FolderCard extends ConsumerWidget {
               builder: (_) => _FolderSongsScreen(folder: folder))),
       child: Container(
         decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
+            color: AppColors.deepSpaceBlackLight,
             borderRadius: BorderRadius.circular(12)),
         child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -157,16 +174,16 @@ class _FolderCard extends ConsumerWidget {
             child: Container(
               width: double.infinity,
               height: 130,
-              color: const Color(0xFF2A2A2A),
-              child: const Icon(Icons.folder_rounded,
-                  color: Color(0xFF1DB954), size: 56),
+              color: AppColors.deepSpaceBlackLighter,
+              child: Icon(Icons.folder_rounded,
+                  color: AppColors.neonPink, size: 56),
             ),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 2),
             child: Text(folder.name,
-                style: const TextStyle(
-                    color: Colors.white,
+                style: TextStyle(
+                    color: AppColors.textPrimary,
                     fontWeight: FontWeight.w600,
                     fontSize: 13),
                 maxLines: 1,
@@ -176,7 +193,7 @@ class _FolderCard extends ConsumerWidget {
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
             child: Text(
                 '${folder.songs.length} song${folder.songs.length == 1 ? '' : 's'}',
-                style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
           ),
         ]),
       ),
@@ -195,19 +212,19 @@ class _FolderSongsScreen extends ConsumerWidget {
     final currentSong = ref.watch(currentSongProvider).valueOrNull;
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.deepSpaceBlack,
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: AppColors.deepSpaceBlack,
         title: Text(folder.name,
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.bold)),
+            style: TextStyle(
+                color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 16),
             child: Center(
               child: Text('${songs.length} songs',
                   style:
-                      const TextStyle(color: Colors.grey, fontSize: 13)),
+                      TextStyle(color: AppColors.textSecondary, fontSize: 13)),
             ),
           ),
         ],
@@ -230,8 +247,8 @@ class _FolderSongsScreen extends ConsumerWidget {
                 icon: const Icon(Icons.play_arrow_rounded),
                 label: const Text('Play All'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF1DB954),
-                  foregroundColor: Colors.black,
+                  backgroundColor: AppColors.neonPink,
+                  foregroundColor: AppColors.deepSpaceBlack,
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30)),
@@ -251,8 +268,8 @@ class _FolderSongsScreen extends ConsumerWidget {
                 icon: const Icon(Icons.shuffle_rounded),
                 label: const Text('Shuffle'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF1DB954),
-                  side: const BorderSide(color: Color(0xFF1DB954)),
+                  foregroundColor: AppColors.neonPink,
+                  side: BorderSide(color: AppColors.neonPink),
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(30)),
@@ -276,31 +293,31 @@ class _FolderSongsScreen extends ConsumerWidget {
                   height: 48,
                   decoration: BoxDecoration(
                       color: playing
-                          ? const Color(0xFF1DB954).withOpacity(0.2)
-                          : const Color(0xFF2A2A2A),
+                          ? AppColors.neonPink.withOpacity(0.2)
+                          : AppColors.deepSpaceBlackLighter,
                       borderRadius: BorderRadius.circular(6)),
                   child: Icon(
                       playing
                           ? Icons.equalizer_rounded
                           : Icons.music_note_rounded,
-                      color: const Color(0xFF1DB954),
+                      color: AppColors.neonPink,
                       size: 22),
                 ),
                 title: Text(song.title,
                     style: TextStyle(
                         color: playing
-                            ? const Color(0xFF1DB954)
-                            : Colors.white,
+                            ? AppColors.neonPink
+                            : AppColors.textPrimary,
                         fontWeight: FontWeight.w500,
                         fontSize: 14),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis),
                 subtitle: Text(song.artist,
                     style:
-                        const TextStyle(color: Colors.grey, fontSize: 12)),
+                        TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                 // ── Professional 3-dot menu: Add to Playlist + Play Next
                 trailing: IconButton(
-                  icon: const Icon(Icons.more_vert, color: Colors.grey),
+                  icon: Icon(Icons.more_vert, color: AppColors.textSecondary),
                   onPressed: () => PlaylistDialogs.showSongOptions(context, ref, song),
                 ),
                 onTap: () {
@@ -316,4 +333,79 @@ class _FolderSongsScreen extends ConsumerWidget {
       ]),
     );
   }
+}
+
+void _showSecretPasswordDialog(BuildContext context) {
+  final controller = TextEditingController();
+  showDialog(
+    context: context,
+    barrierDismissible: false,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.deepSpaceBlackLight,
+      title: const Text('Developer Console',
+          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Enter Developer Passcode:',
+              style: TextStyle(color: Colors.grey)),
+          const SizedBox(height: 12),
+          TextField(
+            controller: controller,
+            obscureText: true,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Passcode',
+              hintStyle:
+                  TextStyle(color: AppColors.textSecondary.withOpacity(0.4)),
+              focusedBorder: UnderlineInputBorder(
+                  borderSide: BorderSide(color: AppColors.neonPink)),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: Text('Cancel',
+              style: TextStyle(color: AppColors.textSecondary)),
+        ),
+        TextButton(
+          onPressed: () async {
+            final passwordEntered = controller.text.trim();
+            // Validate directly against Firestore — no hardcoded fallback
+            final isValid = await SecurityEngine()
+                .validateSecretConsolePasscode(passwordEntered);
+
+            if (isValid) {
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
+                final prefs = await SharedPreferences.getInstance();
+                await prefs.setInt('last_console_access_timestamp',
+                    DateTime.now().millisecondsSinceEpoch);
+
+                if (context.mounted) {
+                  Navigator.of(context, rootNavigator: true).push(
+                    MaterialPageRoute(
+                        builder: (context) =>
+                            const SecretConfigurationScreen()),
+                  );
+                }
+              }
+            } else {
+              if (ctx.mounted) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                    content: Text('Access Denied',
+                        style: TextStyle(color: Colors.white)),
+                    backgroundColor: Colors.red));
+              }
+            }
+          },
+          child: Text('Unlock',
+              style: TextStyle(color: AppColors.neonPink)),
+        ),
+      ],
+    ),
+  );
 }

@@ -6,6 +6,7 @@ import '../../domain/entities/song.dart';
 import '../providers/audio_provider.dart';
 import 'playlist_dialogs.dart';
 import 'default_album_art.dart';
+import '../../core/constants/app_colors.dart';
 
 /// Floating mini player — completely independent pill widget.
 /// Floats above the bottom nav bar, no connection to SlidingUpPanel.
@@ -25,7 +26,7 @@ class FloatingMiniPlayer extends ConsumerStatefulWidget {
 
 class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
     with SingleTickerProviderStateMixin {
-  Color _accent = const Color(0xFF1DB954);
+  Color _accent = AppColors.neonPink;
   late AnimationController _entryCtrl;
   late Animation<Offset> _slideAnim;
   late Animation<double> _fadeAnim;
@@ -62,7 +63,7 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
         setState(() {
           _accent = palette.vibrantColor?.color ??
               palette.dominantColor?.color ??
-              const Color(0xFF1DB954);
+              AppColors.neonPink;
         });
       }
     } catch (_) {}
@@ -90,9 +91,16 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
       child: FadeTransition(
         opacity: _fadeAnim,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.only(left: 12, right: 12, top: 8, bottom: 0),
           child: GestureDetector(
             onTap: widget.onTap,
+            onHorizontalDragEnd: (details) {
+              if (details.primaryVelocity! > 100) {
+                audio.skipToPrevious();
+              } else if (details.primaryVelocity! < -100) {
+                audio.skipToNext();
+              }
+            },
             child: Container(
               height: 70,
               decoration: BoxDecoration(
@@ -105,7 +113,7 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
                     offset: const Offset(0, 6),
                   ),
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.5),
+                    color: AppColors.deepSpaceBlack.withOpacity(0.5),
                     blurRadius: 16,
                     offset: const Offset(0, 4),
                   ),
@@ -125,8 +133,8 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
-                                Colors.black.withOpacity(0.75),
-                                Colors.black.withOpacity(0.65),
+                                AppColors.deepSpaceBlack.withOpacity(0.75),
+                                AppColors.deepSpaceBlack.withOpacity(0.65),
                               ],
                             ),
                             border: Border.all(
@@ -152,7 +160,7 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
                       child: LinearProgressIndicator(
                         value: progress,
                         minHeight: 2.5,
-                        backgroundColor: Colors.white.withOpacity(0.08),
+                        backgroundColor: AppColors.textPrimary.withOpacity(0.08),
                         valueColor: AlwaysStoppedAnimation<Color>(_accent),
                       ),
                     ),
@@ -160,7 +168,7 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
 
                   // ── Content row ───────────────────────────────────────
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 14, 8),
+                    padding: const EdgeInsets.fromLTRB(12, 8, 14, 4),
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
@@ -183,8 +191,8 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
                             children: [
                               Text(
                                 widget.song.title,
-                                style: const TextStyle(
-                                  color: Colors.white,
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
                                   fontSize: 13.5,
                                   fontWeight: FontWeight.w700,
                                   letterSpacing: 0.1,
@@ -196,7 +204,7 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
                               Text(
                                 widget.song.artist,
                                 style: TextStyle(
-                                  color: Colors.white.withOpacity(0.6),
+                                  color: AppColors.textSecondary,
                                   fontSize: 11.5,
                                 ),
                                 maxLines: 1,
@@ -246,7 +254,7 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
                               isPlaying
                                   ? Icons.pause_rounded
                                   : Icons.play_arrow_rounded,
-                              color: Colors.white,
+                              color: AppColors.deepSpaceBlack,
                               size: 24,
                             ),
                           ),
@@ -270,7 +278,7 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
         behavior: HitTestBehavior.opaque,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-          child: Icon(icon, color: Colors.white, size: size),
+          child: Icon(icon, color: AppColors.textPrimary, size: size),
         ),
       );
 }

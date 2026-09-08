@@ -9,17 +9,17 @@ import '../../models/song_model.dart';
 /// ✅ Uses `page` param so every section gets DIFFERENT songs.
 /// ✅ No API key required. No login. Always online.
 ///
-/// Primary:  https://jiosaavn-api-peach.vercel.app  (confirmed working May 2025)
-/// Fallback: https://saavn.dev                       (main public instance)
-/// Mirror 2: https://saavn-api.vercel.app            (community mirror)
+/// Primary:  https://jiosaavn-api-peach.vercel.app  (confirmed working)
+/// Fallback: https://saavn-api.vercel.app            (community mirror)
+/// Fallback: https://saavn.dev                       (frequently down, last resort)
 class MeloDatasource {
   final Dio _dio;
 
   // Ordered by reliability — app tries each in turn if the previous fails
   static const _hosts = [
     'https://jiosaavn-api-peach.vercel.app/api',  // ✅ confirmed working
-    'https://saavn.dev/api',                       // main instance (may be down)
     'https://saavn-api.vercel.app/api',            // community mirror
+    'https://saavn.dev/api',                       // frequently down — last resort
   ];
 
   MeloDatasource({required Dio dio}) : _dio = dio;

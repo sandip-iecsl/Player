@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
-import '../../domain/entities/song.dart';
 import '../../config/lastfm_config.dart';
 
 /// Last.fm API Service

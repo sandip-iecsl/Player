@@ -2,35 +2,94 @@ import 'dart:async';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import '../../domain/entities/song.dart';
+import '../../core/network/circuit_breaker_interceptor.dart';
 
 /// JioSaavn Unofficial API Service
 /// Uses the unofficial JioSaavn API (https://github.com/sumitkolhe/jiosaavn-api)
 /// Can be deployed to Vercel, Cloudflare Workers, or any hosting platform
-/// 
-/// Default: Uses public instance at saavn.dev
-/// You can deploy your own instance and change the baseUrl
+///
+/// Primary: https://jiosaavn-api-peach.vercel.app (confirmed working)
+/// Fallback: https://saavn-api.vercel.app (community mirror)
+/// Note: saavn.dev is frequently down; avoid using it as primary.
 class JioSaavnUnofficialAPI {
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 15),
   ));
 
-  // Public instance of the unofficial API
-  // Using saavn.dev as primary endpoint
-  static const String _baseUrl = 'https://saavn.dev/api';
+  final CircuitBreakerInterceptor circuitBreaker = CircuitBreakerInterceptor();
+
+  JioSaavnUnofficialAPI() {
+    _dio.interceptors.add(circuitBreaker);
+  }
+
+  // Ordered list of API hosts — first one tried, falls back to the next on failure
+  static const List<String> _hosts = [
+    'https://jiosaavn-api-peach.vercel.app/api', // ✅ confirmed working
+    'https://saavn-api.vercel.app/api',           // community mirror
+    'https://saavn.dev/api',                      // may be down
+  ];
+
+  // Primary base URL — uses first host in list
+  static String get _baseUrl => _hosts.first;
   
+  /// Get search autocomplete suggestions
+  Future<Map<String, List<dynamic>>> getAutocomplete(String query) async {
+    if (query.trim().isEmpty) return {};
+    try {
+      final response = await _dio.get(
+        '$_baseUrl/search',
+        queryParameters: {'query': query},
+        options: Options(
+          headers: {
+            'Accept': 'application/json',
+          },
+          responseType: ResponseType.json,
+        ),
+      );
+      if (response.statusCode == 200 && response.data != null) {
+        final data = response.data['data'];
+        if (data is Map<String, dynamic>) {
+          final songs = <Song>[];
+          final songsData = data['songs']?['results'] as List? ?? [];
+          for (final item in songsData) {
+            try {
+              if (item is Map<String, dynamic>) {
+                songs.add(_parseSong(item));
+              }
+            } catch (_) {}
+          }
+          final albums = (data['albums']?['results'] as List? ?? [])
+              .whereType<Map<String, dynamic>>()
+              .toList();
+          final artists = (data['artists']?['results'] as List? ?? [])
+              .whereType<Map<String, dynamic>>()
+              .toList();
+          return {
+            'songs': songs,
+            'albums': albums,
+            'artists': artists,
+          };
+        }
+      }
+    } catch (e) {
+      debugPrint('[JioSaavnAPI] Autocomplete failed: $e');
+    }
+    return {};
+  }
+
   /// Search for songs
-  Future<List<Song>> searchSongs(String query, {int limit = 20}) async {
+  Future<List<Song>> searchSongs(String query, {int limit = 20, int page = 1}) async {
     if (query.trim().isEmpty) return [];
     
-    debugPrint('[JioSaavnAPI] 🔍 Searching for: "$query"');
+    debugPrint('[JioSaavnAPI] 🔍 Searching for: "$query" (limit: $limit, page: $page)');
 
     try {
       final response = await _dio.get(
         '$_baseUrl/search/songs',
         queryParameters: {
           'query': query,
-          'page': 1,
+          'page': page,
           'limit': limit,
         },
         options: Options(
@@ -185,7 +244,9 @@ class JioSaavnUnofficialAPI {
 
       // Get artists - try multiple fields
       String artist = 'Unknown Artist';
-      if (json['primaryArtists'] != null && json['primaryArtists'].toString().isNotEmpty) {
+      if (json['subtitle'] != null && json['subtitle'].toString().isNotEmpty) {
+        artist = json['subtitle'].toString();
+      } else if (json['primaryArtists'] != null && json['primaryArtists'].toString().isNotEmpty) {
         artist = json['primaryArtists'].toString();
       } else if (json['artist'] != null && json['artist'].toString().isNotEmpty) {
         artist = json['artist'].toString();
@@ -267,14 +328,24 @@ class JioSaavnUnofficialAPI {
         }
       }
 
+      final String? language = json['language']?.toString();
+
+      if (previewUrl != null && previewUrl.startsWith('http://')) {
+        previewUrl = previewUrl.replaceFirst('http://', 'https://');
+      }
+
+      String finalArtist = _cleanHtml(artist).trim();
+      if (finalArtist.isEmpty) finalArtist = 'Unknown Artist';
+
       return Song(
         id: json['id']?.toString() ?? json['permaUrl']?.toString() ?? '',
         title: _cleanHtml(title),
-        artist: _cleanHtml(artist),
+        artist: finalArtist,
         album: album != null ? _cleanHtml(album) : null,
         albumArt: albumArt,
         duration: Duration(seconds: durationSeconds),
         previewUrl: previewUrl,
+        language: language,
       );
     } catch (e, stackTrace) {
       debugPrint('[JioSaavnAPI] ⚠️ Error in _parseSong: $e');

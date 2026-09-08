@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 class NotificationControllerSettings {
   final bool useEnhancedController;
   final bool enableBeatResponse;
-  final bool enableAlwaysOnDisplay;
   final bool enableAnimations;
   final NotificationStyle style;
   final double animationIntensity;
@@ -14,7 +13,6 @@ class NotificationControllerSettings {
   const NotificationControllerSettings({
     this.useEnhancedController = true,
     this.enableBeatResponse = true,
-    this.enableAlwaysOnDisplay = true,
     this.enableAnimations = true,
     this.style = NotificationStyle.enhanced,
     this.animationIntensity = 0.8,
@@ -24,7 +22,6 @@ class NotificationControllerSettings {
   NotificationControllerSettings copyWith({
     bool? useEnhancedController,
     bool? enableBeatResponse,
-    bool? enableAlwaysOnDisplay,
     bool? enableAnimations,
     NotificationStyle? style,
     double? animationIntensity,
@@ -33,7 +30,6 @@ class NotificationControllerSettings {
     return NotificationControllerSettings(
       useEnhancedController: useEnhancedController ?? this.useEnhancedController,
       enableBeatResponse: enableBeatResponse ?? this.enableBeatResponse,
-      enableAlwaysOnDisplay: enableAlwaysOnDisplay ?? this.enableAlwaysOnDisplay,
       enableAnimations: enableAnimations ?? this.enableAnimations,
       style: style ?? this.style,
       animationIntensity: animationIntensity ?? this.animationIntensity,
@@ -66,10 +62,6 @@ class NotificationControllerSettingsNotifier extends StateNotifier<NotificationC
     state = state.copyWith(enableBeatResponse: !state.enableBeatResponse);
   }
 
-  void toggleAlwaysOnDisplay() {
-    state = state.copyWith(enableAlwaysOnDisplay: !state.enableAlwaysOnDisplay);
-  }
-
   void toggleAnimations() {
     state = state.copyWith(enableAnimations: !state.enableAnimations);
   }
@@ -89,6 +81,3 @@ class NotificationControllerSettingsNotifier extends StateNotifier<NotificationC
 
 /// Provider for beat intensity (used by notification controller)
 final beatIntensityProvider = StateProvider<double>((ref) => 0.0);
-
-/// Provider to track always-on display status
-final alwaysOnDisplayStatusProvider = StateProvider<bool>((ref) => false);

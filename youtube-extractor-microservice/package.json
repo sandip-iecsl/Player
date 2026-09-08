@@ -1,0 +1,27 @@
+{
+  "name": "youtube-extractor-microservice",
+  "version": "1.0.0",
+  "description": "High-performance low-latency YouTube audio stream extraction and download microservice for Aura Player",
+  "main": "server.js",
+  "scripts": {
+    "postinstall": "node -e \"if (process.platform !== 'win32' && !require('fs').existsSync('./yt-dlp')) { const { execSync } = require('child_process'); try { execSync('curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o yt-dlp && chmod a+rx yt-dlp'); } catch(e){} }\"",
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "@distube/ytdl-core": "^4.16.12",
+    "axios": "^1.20.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "helmet": "^7.1.0",
+    "play-dl": "^1.9.7",
+    "youtubei.js": "^18.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

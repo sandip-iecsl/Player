@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../domain/entities/song.dart';
+import '../../data/services/cloud_sync_service.dart';
+import '../../data/services/audio_service.dart';
 
 const _searchHistoryBoxKey = 'searchHistory';
 const _recentlyPlayedBoxKey = 'recentlyPlayed';
@@ -33,6 +36,7 @@ class SearchHistoryNotifier extends StateNotifier<List<String>> {
     }
     await box.add(query.trim());
     state = box.values.toList().reversed.take(20).toList();
+    CloudSyncService().backupData();
   }
 
   Future<void> remove(String query) async {
@@ -40,12 +44,14 @@ class SearchHistoryNotifier extends StateNotifier<List<String>> {
     final idx = box.values.toList().indexWhere((q) => q == query);
     if (idx != -1) await box.deleteAt(idx);
     state = box.values.toList().reversed.take(20).toList();
+    CloudSyncService().backupData();
   }
 
   Future<void> clear() async {
     final box = await Hive.openBox<String>(_searchHistoryBoxKey);
     await box.clear();
     state = [];
+    CloudSyncService().backupData();
   }
 }
 
@@ -56,8 +62,26 @@ final recentlyPlayedProvider = StateNotifierProvider<RecentlyPlayedNotifier, Lis
 });
 
 class RecentlyPlayedNotifier extends StateNotifier<List<Song>> {
+  StreamSubscription? _subscription;
+
   RecentlyPlayedNotifier() : super([]) {
-    _load();
+    _load().then((_) => _listenToAudioHandler());
+  }
+
+  void _listenToAudioHandler() {
+    _subscription = audioHandler.currentSongStream.listen((song) {
+      if (song != null) {
+        if (state.isEmpty || state.first.id != song.id) {
+          add(song);
+        }
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -80,14 +104,27 @@ class RecentlyPlayedNotifier extends StateNotifier<List<Song>> {
 
   Future<void> add(Song song) async {
     final box = await Hive.openBox<String>(_recentlyPlayedBoxKey);
-    final all = box.values.toList();
-    // Remove duplicate by id
-    final dupIdx = all.indexWhere((s) {
+    final keysToDelete = <dynamic>[];
+    for (int i = 0; i < box.length; i++) {
       try {
-        return jsonDecode(s)['id'] == song.id;
-      } catch (_) { return false; }
-    });
-    if (dupIdx != -1) await box.deleteAt(dupIdx);
+        final decoded = jsonDecode(box.getAt(i)!);
+        if (decoded['id'] == song.id) {
+          keysToDelete.add(box.keyAt(i));
+          continue;
+        }
+        
+        final existingTitle = (decoded['title'] as String).replaceAll(RegExp(r'[\(\[\-\|].*'), '').trim().toLowerCase();
+        final newTitle = song.title.replaceAll(RegExp(r'[\(\[\-\|].*'), '').trim().toLowerCase();
+        
+        if (existingTitle.isNotEmpty && newTitle == existingTitle) {
+          keysToDelete.add(box.keyAt(i));
+        }
+      } catch (_) {}
+    }
+    
+    for (final key in keysToDelete) {
+      await box.delete(key);
+    }
     await box.add(jsonEncode(_songToJson(song)));
     state = box.values
       .map((s) {
@@ -98,6 +135,7 @@ class RecentlyPlayedNotifier extends StateNotifier<List<Song>> {
       .reversed
       .take(20)
       .toList();
+    CloudSyncService().backupData();
   }
 
   Map<String, dynamic> _songToJson(Song s) => {

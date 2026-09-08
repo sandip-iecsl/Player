@@ -126,15 +126,4 @@ class MultiSourceAggregator {
   Future<List<Song>> getSuggestions(String songId) =>
       _melo.getSuggestions(songId, limit: 15);
 
-  void _lightShuffle(List<Song> list) {
-    if (list.length < 3) return;
-    final rng = Random();
-    for (int i = list.length - 1; i > 0; i--) {
-      final jMin = (i - 2).clamp(0, i);
-      final j = jMin + rng.nextInt(i - jMin + 1);
-      final tmp = list[i];
-      list[i] = list[j];
-      list[j] = tmp;
-    }
-  }
 }

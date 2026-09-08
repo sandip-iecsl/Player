@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:pointycastle/export.dart';
@@ -24,10 +23,10 @@ class DirectJioSaavnService {
   static const String _baseUrl = 'https://www.jiosaavn.com/api.php';
 
   /// Search for songs using JioSaavn's search.getResults endpoint
-  Future<List<Song>> searchSongs(String query, {int limit = 20}) async {
+  Future<List<Song>> searchSongs(String query, {int limit = 20, int page = 1}) async {
     if (query.trim().isEmpty) return [];
 
-    debugPrint('[DirectJioSaavn] 🔍 Searching for: "$query"');
+    debugPrint('[DirectJioSaavn] 🔍 Searching for: "$query" (limit: $limit, page: $page)');
 
     try {
       final response = await _dio.get(
@@ -40,7 +39,7 @@ class DirectJioSaavnService {
           'ctx': 'web6dot0',
           'q': query,
           'n': limit.toString(),
-          'p': '1',
+          'p': page.toString(),
         },
         options: Options(
           responseType: ResponseType.plain, // Get raw string, parse manually
@@ -103,6 +102,73 @@ class DirectJioSaavnService {
     return [];
   }
 
+  /// Get search autocomplete suggestions using direct JioSaavn API
+  Future<Map<String, List<dynamic>>> getAutocomplete(String query) async {
+    if (query.trim().isEmpty) return {};
+
+    try {
+      final response = await _dio.get(
+        _baseUrl,
+        queryParameters: {
+          '__call': 'autocomplete.get',
+          '_format': 'json',
+          '_marker': '0',
+          'api_version': '4',
+          'ctx': 'web6dot0',
+          'query': query,
+        },
+        options: Options(
+          responseType: ResponseType.plain,
+          validateStatus: (s) => s != null && s < 500,
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final rawString = response.data.toString();
+        Map<String, dynamic> data;
+        try {
+          data = jsonDecode(rawString) as Map<String, dynamic>;
+        } catch (e) {
+          debugPrint('[DirectJioSaavn] ❌ JSON parse failed for autocomplete: $e');
+          return {};
+        }
+
+        final songs = <Song>[];
+        final albums = <dynamic>[];
+        final artists = <dynamic>[];
+
+        if (data['songs'] != null && data['songs']['data'] is List) {
+          final songsData = data['songs']['data'] as List;
+          for (final item in songsData) {
+            try {
+              if (item is Map<String, dynamic>) {
+                songs.add(_parseSong(item));
+              }
+            } catch (_) {}
+          }
+        }
+
+        if (data['albums'] != null && data['albums']['data'] is List) {
+          albums.addAll(data['albums']['data'] as List);
+        }
+
+        if (data['artists'] != null && data['artists']['data'] is List) {
+          artists.addAll(data['artists']['data'] as List);
+        }
+
+        return {
+          'songs': songs,
+          'albums': albums,
+          'artists': artists,
+        };
+      }
+    } catch (e) {
+      debugPrint('[DirectJioSaavn] ❌ Autocomplete failed: $e');
+    }
+
+    return {};
+  }
+
   Song _parseSong(Map<String, dynamic> json) {
     final id = json['id']?.toString() ?? '';
     final title = _clean(json['title']?.toString() ?? json['song']?.toString() ?? 'Unknown');
@@ -129,7 +195,8 @@ class DirectJioSaavnService {
       }
     }
     if (artist == 'Unknown Artist') {
-      artist = json['primary_artists']?.toString() ??
+      artist = json['subtitle']?.toString() ??
+          json['primary_artists']?.toString() ??
           json['singers']?.toString() ??
           json['artist']?.toString() ??
           'Unknown Artist';
@@ -173,23 +240,30 @@ class DirectJioSaavnService {
       previewUrl = _decrypt(encUrl);
     }
 
+    final String? language = json['language']?.toString() ??
+        (moreInfo is Map ? (moreInfo)['language']?.toString() : null);
+
+    String finalArtist = _clean(artist).trim();
+    if (finalArtist.isEmpty) finalArtist = 'Unknown Artist';
+
     return Song(
       id: id,
       title: title,
-      artist: _clean(artist),
+      artist: finalArtist,
       album: album != null ? _clean(album) : null,
       albumArt: albumArt,
       duration: Duration(seconds: dur),
       previewUrl: previewUrl,
+      language: language,
     );
   }
 
   /// DES-ECB decrypt JioSaavn media URL (matches jiosaavn-api implementation)
-  String _decrypt(String encryptedUrl) {
+  String _decrypt(String encryptedUrl, {bool upgradeTo320 = true}) {
     try {
       // DES key is '38346591' (8 bytes)
       // Use DESedeEngine with key repeated 3x = equivalent to single DES
-      final keyStr = '38346591';
+      const keyStr = '38346591';
       final keyBytes = Uint8List.fromList(
         [...utf8.encode(keyStr), ...utf8.encode(keyStr), ...utf8.encode(keyStr)], // 24 bytes for 3DES
       );
@@ -211,9 +285,16 @@ class DirectJioSaavnService {
           ? output.sublist(0, output.length - pad)
           : output;
 
-      final url = utf8.decode(unpadded, allowMalformed: true);
+      var url = utf8.decode(unpadded, allowMalformed: true);
+      // Upgrade to HTTPS
+      if (url.startsWith('http://')) {
+        url = url.replaceFirst('http://', 'https://');
+      }
       // Upgrade to 320kbps
-      return url.replaceAll('_96', '_320').replaceAll('_160', '_320');
+      if (upgradeTo320) {
+        return url.replaceAll('_96', '_320').replaceAll('_160', '_320');
+      }
+      return url;
     } catch (e) {
       debugPrint('[DirectJioSaavn] ⚠️ Decrypt failed: $e');
       return '';
@@ -227,6 +308,61 @@ class DirectJioSaavnService {
       .replaceAll('&gt;', '>')
       .replaceAll('&#039;', "'")
       .replaceAll('&nbsp;', ' ');
+
+  /// Fetch a fresh stream URL for a song by its JioSaavn ID.
+  ///
+  /// JioSaavn CDN URLs are time-limited tokens that expire after a few minutes.
+  /// When playback fails with "Source error", call this to get a valid URL.
+  ///
+  /// Response structure: { "songs": [ { "id": "...", "more_info": { "encrypted_media_url": "..." } } ], "modules": {...} }
+  Future<String?> getFreshStreamUrl(String songId) async {
+    if (songId.isEmpty) return null;
+    debugPrint('[DirectJioSaavn] 🔄 Refreshing stream URL for song ID: $songId');
+    try {
+      final response = await _dio.get(
+        _baseUrl,
+        queryParameters: {
+          '__call': 'song.getDetails',
+          '_format': 'json',
+          '_marker': '0',
+          'api_version': '4',
+          'ctx': 'web6dot0',
+          'pids': songId,
+        },
+        options: Options(
+          responseType: ResponseType.plain,
+          validateStatus: (s) => s != null && s < 500,
+        ),
+      );
+
+      if (response.statusCode == 200 && response.data != null) {
+        final data = jsonDecode(response.data.toString()) as Map<String, dynamic>;
+
+        // Response: { "songs": [ { "id": "...", "more_info": { "encrypted_media_url": "..." } } ] }
+        final songsList = data['songs'] as List?;
+        if (songsList != null && songsList.isNotEmpty) {
+          final songData = songsList.first as Map<String, dynamic>?;
+          if (songData != null) {
+            final moreInfo = songData['more_info'] as Map<String, dynamic>?;
+            final encUrl = moreInfo?['encrypted_media_url']?.toString()
+                ?? songData['encrypted_media_url']?.toString();
+            if (encUrl != null && encUrl.isNotEmpty) {
+              final freshUrl = _decrypt(encUrl, upgradeTo320: false); // Fallback should use native bitrate
+              if (freshUrl.isNotEmpty) {
+                debugPrint('[DirectJioSaavn] ✅ Got fresh URL for $songId');
+                return freshUrl;
+              }
+            }
+          }
+        }
+        debugPrint('[DirectJioSaavn] ⚠️ No encrypted_media_url in song.getDetails response for $songId');
+      }
+    } catch (e) {
+      debugPrint('[DirectJioSaavn] ❌ getFreshStreamUrl failed: $e');
+    }
+    return null;
+  }
+
 
   void dispose() => _dio.close();
 }

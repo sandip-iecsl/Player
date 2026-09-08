@@ -1,0 +1,49 @@
+{
+  "project_info": {
+    "project_number": "828704572930",
+    "firebase_url": "https://aura-player-e7c87-default-rtdb.firebaseio.com",
+    "project_id": "aura-player-e7c87",
+    "storage_bucket": "aura-player-e7c87.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:828704572930:android:1127cdf748c13dbfda091b",
+        "android_client_info": {
+          "package_name": "aura.player_2026"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAMtpJntzYSdNFe0ra1rDdloBbINY2URKw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:828704572930:android:015c0b1758738205da091b",
+        "android_client_info": {
+          "package_name": "com.example.free_play"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAMtpJntzYSdNFe0ra1rDdloBbINY2URKw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

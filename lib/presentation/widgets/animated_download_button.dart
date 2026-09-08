@@ -85,7 +85,7 @@ class _AnimatedDownloadButtonState extends ConsumerState<AnimatedDownloadButton>
           height: 50,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            gradient: const LinearGradient(
+            gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
               colors: [
@@ -160,7 +160,7 @@ class _AnimatedDownloadButtonState extends ConsumerState<AnimatedDownloadButton>
       height: 50,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: const LinearGradient(
+        gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [

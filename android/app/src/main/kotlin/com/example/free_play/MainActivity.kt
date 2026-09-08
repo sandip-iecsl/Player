@@ -125,6 +125,34 @@ class MainActivity : AudioServiceActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // ── Location service channel ──────────────────────────────────────────
+        val locationServiceChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "aura_player/location_service")
+        locationServiceChannel.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "openLocationSettings" -> {
+                    try {
+                        val intent = android.content.Intent(android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                        intent.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                        startActivity(intent)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("SETTINGS_ERROR", e.message, null)
+                    }
+                }
+                "cancelNotification" -> {
+                    val notifId = call.argument<Int>("id") ?: 9001
+                    try {
+                        val nm = getSystemService(android.content.Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                        nm.cancel(notifId)
+                        result.success(true)
+                    } catch (e: Exception) {
+                        result.error("NOTIF_ERROR", e.message, null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
     }
 
     private fun registerScreenListeners(screenChannel: MethodChannel, flutterEngine: FlutterEngine) {

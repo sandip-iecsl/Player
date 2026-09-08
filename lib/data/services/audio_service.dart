@@ -1,10 +1,22 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 import 'dart:math';
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:dio/dio.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../domain/entities/song.dart';
 import 'ml_recommendation_engine.dart';
+import 'hybrid_search_service.dart';
+import 'local_taste_engine.dart';
+import 'global_firebase_engine.dart';
+import 'offline_storage_service.dart';
+import 'linguistic_engine.dart';
+import 'direct_jiosaavn_service.dart';
+import 'youtube_extractor_service.dart';
 
 late AudioServiceHandler audioHandler;
 
@@ -30,7 +42,8 @@ enum PlaybackContext {
 }
 
 class AudioServiceHandler extends BaseAudioHandler {
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  // Non-final so we can dispose + recreate when ExoPlayer gets a stuck player ID
+  late AudioPlayer _audioPlayer;
   final Dio _dio = Dio(BaseOptions(
     connectTimeout: const Duration(seconds: 10),
     receiveTimeout: const Duration(seconds: 15),
@@ -38,10 +51,50 @@ class AudioServiceHandler extends BaseAudioHandler {
   
   // ML Recommendation Engine
   final MLRecommendationEngine _mlEngine = MLRecommendationEngine();
+  final LinguisticEngine _linguisticEngine = LinguisticEngine();
+  
+  // Anti-spam debounce session tracking
+  int _playSessionId = 0;
+  Timer? _skipDebounceTimer;
+
+  // Mutex: prevents concurrent _playSong calls from crashing ExoPlayer
+  bool _isPlayingSong = false;
+
+  // Class-level completion guard (was incorrectly a closure-local, causing duplicate _onTrackEnded on listener re-creation)
+  bool _hasFiredCompletion = false;
+
+  // Subscription handles — stored so _resetPlayer can cancel them before re-attaching
+  StreamSubscription? _playbackEventSub;
+  StreamSubscription? _positionSub1;
+  StreamSubscription? _positionSub2;
+  StreamSubscription? _playerDurSub;
+  StreamSubscription? _processingStateSub;
+
+  // Consecutive failure counter — resets on any successful play
+  int _consecutiveFailures = 0;
+  static const int _maxConsecutiveFailures = 15;
+  
+  // Hybrid Search Service for Spotify recommendations fallback
+  final HybridSearchService _hybridSearch = HybridSearchService();
+
+  // Direct JioSaavn Service — used to refresh expired CDN stream URLs
+  final DirectJioSaavnService _directService = DirectJioSaavnService();
+
+  // YouTube Extractor Service — used to extract links and refresh YouTube streams
+  final YouTubeExtractorService _ytExtractor = YouTubeExtractorService();
+  
+  // Local Taste Matrix Engine
+  final LocalTasteEngine _tasteEngine = LocalTasteEngine();
+  
+  // Global Firebase Engine
+  final GlobalFirebaseEngine _globalEngine = GlobalFirebaseEngine();
 
   // ── Queue state ───────────────────────────────────────────────────────────
   /// The currently active playback queue (may be shuffled).
   final List<Song> _queue = [];
+
+  /// Global play history to prevent duplicate tracks over long listening sessions
+  final List<Song> _playHistory = [];
 
   /// Preserves the original, un-shuffled order so shuffle can be reversed.
   final List<Song> _originalQueue = [];
@@ -50,6 +103,10 @@ class AudioServiceHandler extends BaseAudioHandler {
 
   /// Loaded context — determines end-of-queue behaviour.
   PlaybackContext _context = PlaybackContext.radio;
+  String? _contextId;
+
+  PlaybackContext get currentContext => _context;
+  String? get currentContextId => _contextId;
 
   /// Kept for external callers that still reference isAlgorithmEnabled.
   /// Internally, context drives the decision.
@@ -69,79 +126,232 @@ class AudioServiceHandler extends BaseAudioHandler {
 
   Song? _currentSong;
 
+  // ── Volume & Audio Boost State ──────────────────────────────────────────
+  double _volumeMultiplier = 1.0;
+  double _maxVolumeLimit = 2.0; // Configurable max volume limit
+  final _volumeController = StreamController<double>.broadcast();
+
+  double get volumeMultiplier => _volumeMultiplier;
+  double get maxVolumeLimit => _maxVolumeLimit;
+  Stream<double> get volumeStream => _volumeController.stream;
+
+  // ── EQ State ────────────────────────────────────────────────────────────
+  double _bassGain = 0.0; // 0.0 to 1.0
+  double _trebleGain = 0.0; // 0.0 to 1.0
+  AndroidEqualizer? _equalizer;
+
+  double get bassGain => _bassGain;
+  double get trebleGain => _trebleGain;
+
+  void setMaxVolumeLimit(double limit) {
+    _maxVolumeLimit = limit;
+    if (_volumeMultiplier > _maxVolumeLimit) {
+      setVolume(_maxVolumeLimit);
+    }
+  }
+
+  void setBassGain(double gain) {
+    _bassGain = gain.clamp(0.0, 1.0);
+    _updateEqualizer();
+  }
+
+  void setTrebleGain(double gain) {
+    _trebleGain = gain.clamp(0.0, 1.0);
+    _updateEqualizer();
+  }
+
+  Future<void> _updateEqualizer() async {
+    if (_equalizer == null) return;
+    try {
+      final parameters = await _equalizer!.parameters;
+      final max = parameters.maxDecibels;
+      if (parameters.bands.isNotEmpty) {
+         // Bass is band 0
+         parameters.bands.first.setGain(_bassGain * max);
+         // Treble is last band
+         parameters.bands.last.setGain(_trebleGain * max);
+      }
+      _equalizer!.setEnabled(_bassGain > 0 || _trebleGain > 0);
+      print('[Audio] 🎛️ Equalizer updated: Bass=$_bassGain, Treble=$_trebleGain');
+    } catch (e) {
+      print('[Audio] ❌ Failed to update equalizer: $e');
+    }
+  }
+
+  /// Sets volume directly (clamped 0.0 to _maxVolumeLimit)
+  Future<void> setVolume(double volume) async {
+    _volumeMultiplier = volume.clamp(0.0, _maxVolumeLimit);
+    await _audioPlayer.setVolume(_volumeMultiplier);
+    _volumeController.add(_volumeMultiplier);
+  }
+
+  /// Smoothly transitions the volume to enable or disable boost
+  Future<void> toggleBoost() async {
+    final bool isBoosted = _volumeMultiplier > 1.0;
+    final double target = isBoosted ? 1.0 : _maxVolumeLimit;
+    
+    // Smooth transition over 400ms
+    final double start = _volumeMultiplier;
+    const int steps = 20;
+    final double stepVal = (target - start) / steps;
+    
+    for (int i = 1; i <= steps; i++) {
+      _volumeMultiplier = start + (stepVal * i);
+      await _audioPlayer.setVolume(_volumeMultiplier);
+      _volumeController.add(_volumeMultiplier);
+      await Future.delayed(const Duration(milliseconds: 20));
+    }
+    _volumeMultiplier = target;
+    await _audioPlayer.setVolume(_volumeMultiplier);
+    _volumeController.add(_volumeMultiplier);
+    print('[Audio] 🔊 Boost toggled. Volume updated to ${(_volumeMultiplier * 100).toInt()}%');
+  }
+
+  void _initAudioPlayer() {
+    try {
+      if (Platform.isAndroid) {
+        _equalizer = AndroidEqualizer();
+        _audioPlayer = AudioPlayer(
+          audioPipeline: AudioPipeline(androidAudioEffects: [_equalizer!])
+        );
+      } else {
+        _audioPlayer = AudioPlayer();
+      }
+    } catch (e) {
+      print('[Audio] ❌ Failed to init audio player with effects, falling back: $e');
+      _audioPlayer = AudioPlayer();
+    }
+  }
+
   AudioServiceHandler() {
-    _initWakeMode();
+    _initAudioPlayer();
+    _tasteEngine.init();
     _setupPlayerListeners();
-    _setupScreenStateListener();
+    _setupConnectivityListener();
   }
 
-  Future<void> _initWakeMode() async {
+  /// Dispose the broken AudioPlayer and create a FRESH instance.
+  /// Called when ExoPlayer gets stuck with a stale native player ID.
+  /// CRITICAL: Simply calling stop() is NOT enough — the stuck native player
+  /// stays alive and any subsequent setUrl() call throws an unrecoverable
+  /// native exception. We must dispose + recreate the Dart + native handle.
+  Future<void> _resetPlayer() async {
+    print('[Audio] 🔄 Resetting AudioPlayer — disposing broken instance...');
+
+    // 1. Cancel all stream subscriptions before disposing
+    _playbackEventSub?.cancel();
+    _positionSub1?.cancel();
+    _positionSub2?.cancel();
+    _playerDurSub?.cancel();
+    _processingStateSub?.cancel();
+    _playbackEventSub = null;
+    _positionSub1 = null;
+    _positionSub2 = null;
+    _playerDurSub = null;
+    _processingStateSub = null;
+
+    // 2. Attempt graceful stop on the old instance before dispose
     try {
-      await _audioPlayer.setWakeMode(WakeMode.audio);
-      print('[Audio] 💤 WakeLock enabled (WakeMode.audio)');
-    } catch (e) {
-      print('[Audio] ❌ Failed to set wake mode: $e');
-    }
+      await _audioPlayer.stop().timeout(
+        const Duration(milliseconds: 300),
+        onTimeout: () {
+          print('[Audio] ⚠️ Stop timeout during reset, proceeding to dispose');
+        },
+      );
+    } catch (_) {}
+
+    // 3. Dispose the broken native player completely
+    try {
+      await _audioPlayer.dispose();
+    } catch (_) {}
+
+    // 4. Allow Android to release the native ExoPlayer handle
+    await Future.delayed(const Duration(milliseconds: 200));
+
+    // 5. Create a brand-new AudioPlayer instance (fresh native player)
+    _initAudioPlayer();
+
+    // 6. Re-attach all stream listeners on the new player
+    _setupPlayerListeners();
+
+    _consecutiveFailures = 0;
+    _hasFiredCompletion = false;
+
+    // 7. Restore equalizer settings on the new instance
+    if (_bassGain > 0 || _trebleGain > 0) _updateEqualizer();
+
+    print('[Audio] ✅ AudioPlayer fully reset — new native instance ready');
   }
 
-  Future<void> _setupScreenStateListener() async {
-    // Listen for screen state changes to maintain audio playback during AOD transitions
-    try {
-      // No explicit AudioAttributes API is available in the current just_audio version.
-      // AudioService handles focus and playback lifecycle automatically.
-      print('ℹ️ Screen state listener initialized');
-    } catch (e) {
-      print('❌ Failed to initialize screen state listener: $e');
-    }
+  void _setupConnectivityListener() {
+    Connectivity().onConnectivityChanged.listen((List<ConnectivityResult> results) async {
+      final isOffline = results.contains(ConnectivityResult.none);
+      if (isOffline) {
+        if (_context != PlaybackContext.local) {
+          print('[Audio] 📴 Network dropped. Switching queue to local-only resiliency mode.');
+          _context = PlaybackContext.local;
+          _contextId = 'offline_resiliency';
+          // Dynamically filter active queue for downloaded tracks
+          final offlineSongs = OfflineStorageService.getOfflineSongs();
+          final offlineIds = offlineSongs.map((s) => s.id).toSet();
+          
+          final localOnlyQueue = _queue.where((s) => 
+            offlineIds.contains(s.id) || (s.previewUrl != null && !s.previewUrl!.startsWith('http'))
+          ).toList();
+          
+          if (localOnlyQueue.isNotEmpty) {
+            _queue.clear();
+            _queue.addAll(localOnlyQueue);
+            _originalQueue.clear();
+            _originalQueue.addAll(localOnlyQueue);
+            
+            // Adjust current index to keep playing if current track is local, else skip to first local
+            int newIdx = _queue.indexWhere((s) => s.id == _currentSong?.id);
+            _currentIndex = newIdx >= 0 ? newIdx : 0;
+            if (newIdx < 0) _playSong(_queue[_currentIndex]);
+          } else {
+            stop();
+            print('[Audio] ⚠️ No local tracks available to play offline.');
+          }
+        }
+      } else {
+        print('[Audio] 📶 Network restored. Running offline sync transactions...');
+        await _globalEngine.syncOfflineQueue();
+      }
+    });
+  }
+
+  @override
+  Future<void> onTaskRemoved() async {
+    print('[Audio] 🧹 App closed. Stopping background service...');
+    await stop();
+    await super.onTaskRemoved();
   }
 
   void _setupPlayerListeners() {
-    // ── Enhanced Playback state mirror with stylish notification controls ────────────────────────────────────────────────
-    _audioPlayer.playbackEventStream.listen((event) {
+    // CRITICAL: cancel existing subs before re-attaching.
+    // _resetPlayer() calls this again on a new AudioPlayer instance.
+    // Without this, listeners stack up and _onTrackEnded fires multiple times per song.
+    _playbackEventSub?.cancel();
+    _positionSub1?.cancel();
+    _positionSub2?.cancel();
+    _playerDurSub?.cancel();
+    _processingStateSub?.cancel();
+    _hasFiredCompletion = false;
+    // Cancel existing subscriptions BEFORE re-subscribing.
+    // _resetPlayer() calls this again on a brand-new AudioPlayer instance.
+    // Without cancellation, listeners accumulate and _onTrackEnded fires 2-4x per song.
+    // ── Enhanced Playback state mirror with system notification media controls ───────────
+    _playbackEventSub = _audioPlayer.playbackEventStream.listen((event) {
       final isPlaying = _audioPlayer.playing;
       final processingState = _audioPlayer.processingState;
       
       playbackState.add(playbackState.value.copyWith(
         controls: [
-          // Enhanced controls with custom icons and better styling
-          const MediaControl(
-            androidIcon: 'drawable/ic_skip_previous',
-            label: 'Previous',
-            action: MediaAction.skipToPrevious,
-          ),
-          if (isPlaying)
-            const MediaControl(
-              androidIcon: 'drawable/ic_pause_circle',
-              label: 'Pause',
-              action: MediaAction.pause,
-            )
-          else
-            const MediaControl(
-              androidIcon: 'drawable/ic_play_circle',
-              label: 'Play',
-              action: MediaAction.play,
-            ),
-          const MediaControl(
-            androidIcon: 'drawable/ic_skip_next',
-            label: 'Next',
-            action: MediaAction.skipToNext,
-          ),
-          // Add favorite/like control for enhanced interaction
-          const MediaControl(
-            androidIcon: 'drawable/ic_favorite_border',
-            label: 'Like',
-            action: MediaAction.setRating,
-          ),
-          // Add repeat control
-          MediaControl(
-            androidIcon: _repeatMode == AudioServiceRepeatMode.all 
-                ? 'drawable/ic_repeat_on'
-                : _repeatMode == AudioServiceRepeatMode.one
-                    ? 'drawable/ic_repeat_one'
-                    : 'drawable/ic_repeat_off',
-            label: 'Repeat',
-            action: MediaAction.setRepeatMode,
-          ),
+          MediaControl.skipToPrevious,
+          if (isPlaying) MediaControl.pause else MediaControl.play,
+          MediaControl.skipToNext,
+          MediaControl.stop,
         ],
         systemActions: const {
           MediaAction.seek,
@@ -150,6 +360,12 @@ class AudioServiceHandler extends BaseAudioHandler {
           MediaAction.setShuffleMode,
           MediaAction.setRepeatMode,
           MediaAction.setRating,
+          MediaAction.play,
+          MediaAction.pause,
+          MediaAction.playPause,
+          MediaAction.stop,
+          MediaAction.skipToNext,
+          MediaAction.skipToPrevious,
           MediaAction.fastForward,
           MediaAction.rewind,
         },
@@ -167,23 +383,20 @@ class AudioServiceHandler extends BaseAudioHandler {
         queueIndex:       _currentIndex,
         shuffleMode:      _shuffleMode,
         repeatMode:       _repeatMode,
-        // Enhanced for better lock screen and notification display
-        androidCompactActionIndices: const [0, 1, 2], // Previous, Play/Pause, Next
+        // Android System Media Notification: 0=Previous, 1=Play/Pause, 2=Next
+        androidCompactActionIndices: const [0, 1, 2],
       ));
     });
 
-    // Listen to playing state changes for immediate notification updates
-    _audioPlayer.playingStream.listen((playing) {
+    // Also listen to position stream for smooth seek bar updates on lockscreen
+    _positionSub1 = _audioPlayer.positionStream.listen((position) {
+      if (!playbackState.hasValue) return;
       playbackState.add(playbackState.value.copyWith(
-        playing: playing,
-        controls: [
-          MediaControl.skipToPrevious,
-          if (playing) MediaControl.pause else MediaControl.play,
-          MediaControl.skipToNext,
-          MediaControl.stop,
-        ],
+        updatePosition: position,
       ));
     });
+
+
 
     // ── Track-ended gatekeeper ───────────────────────────────────────────────
     // Evaluated in strict priority order:
@@ -192,72 +405,125 @@ class AudioServiceHandler extends BaseAudioHandler {
     //  Gate 3 ▶ Repeat All  — wrap back to index 0.
     //  Gate 4 ▶ Autoplay    — only for search / radio contexts.
     //  Gate 5 ▶ Stop        — clean stop for album / playlist / local.
-    _audioPlayer.processingStateStream.listen((state) {
-      if (state == ProcessingState.completed) {
+    _processingStateSub = _audioPlayer.processingStateStream.listen((state) {
+      if (state == ProcessingState.completed && !_hasFiredCompletion) {
+        _hasFiredCompletion = true;
         // Track song completion for ML engine
-        if (_currentSong != null) {
-          final completionRate = _audioPlayer.position.inSeconds / 
-                                (_currentSong!.duration.inSeconds > 0 ? _currentSong!.duration.inSeconds : 1);
-          _mlEngine.trackSongPlay(_currentSong!, completionRate: completionRate.clamp(0.0, 1.0));
-          print('[ML] 📊 Tracked: ${_currentSong!.title} - Completion: ${(completionRate * 100).toStringAsFixed(1)}%');
+        // Use _currentSong field or fall back to queue getter
+        final songToLog = _currentSong ?? currentSong;
+        if (songToLog != null) {
+          final completionRate = _audioPlayer.position.inSeconds /
+                                (songToLog.duration.inSeconds > 0 ? songToLog.duration.inSeconds : 1);
+          _mlEngine.trackSongPlay(songToLog, completionRate: completionRate.clamp(0.0, 1.0));
+          print('[ML] 📊 Tracked: ${songToLog.title} - Completion: ${(completionRate * 100).toStringAsFixed(1)}%');
+
+          // Log track playback to Local Hive history + cloud backup
+          _tasteEngine.logPlay(songToLog);
+          // Log to Global Firestore play count
+          _globalEngine.logPlay(songToLog);
         }
         _onTrackEnded();
       }
     });
 
-    _audioPlayer.playbackEventStream.listen(
-      (event) {},
-      onError: (Object e, StackTrace st) => print('[Audio] ❌ Player error: $e'),
-    );
+    // Fallback for Android ExoPlayer quirk where it sometimes hangs at the end
+    // of an MP4/M4A stream and never emits ProcessingState.completed
+    _positionSub2 = _audioPlayer.positionStream.listen((pos) {
+      final dur = _audioPlayer.duration;
+      if (dur != null && dur.inMilliseconds > 0) {
+        // If position is at the very start (e.g. new song), reset the fired flag
+        if (pos.inMilliseconds < 1000) {
+          _hasFiredCompletion = false;
+        }
+        // If we reach within 300ms of the end, artificially trigger completion
+        else if (pos.inMilliseconds >= dur.inMilliseconds - 300 && !_hasFiredCompletion) {
+          print('[Audio] ⚠️ positionStream fallback reached end of track. Triggering completion.');
+          _hasFiredCompletion = true;
+          
+          final songToLog = _currentSong ?? currentSong;
+          if (songToLog != null) {
+            _mlEngine.trackSongPlay(songToLog, completionRate: 1.0);
+            _tasteEngine.logPlay(songToLog);
+            _globalEngine.logPlay(songToLog);
+          }
+          _onTrackEnded();
+        }
+      }
+    });
+
+
+  }
+
+  /// Safely fetch a song from the active queue with index and bounds validation.
+  Song? _getSafeQueueSong(int index) {
+    if (_queue.isEmpty || index < 0 || index >= _queue.length) {
+      print('[Audio] ⚠️ Invalid queue access: index=$index, length=${_queue.length}');
+      return null;
+    }
+    return _queue[index];
   }
 
   // ── onTrackEnded — the single structural gatekeeper ─────────────────────────
   void _onTrackEnded() {
     print('[Audio] 🏁 Track ended - Current index: $_currentIndex, Queue length: ${_queue.length}');
-    
+
+    if (_queue.isEmpty) {
+      print('[Audio] ⚠️ Track ended but queue is empty');
+      _audioPlayer.stop();
+      return;
+    }
+
     // Step 1: Check Repeat One Gate
     if (_repeatMode == AudioServiceRepeatMode.one) {
       print('[Audio] 🔁 Repeat ONE - Replaying current track');
       seek(Duration.zero);
-      play(); // Replay current track
-      // Keep repeat mode ON - don't turn it off automatically
-      return; // Exit function block
+      play();
+      return;
     }
 
     // Step 2: Check Active Queue Boundaries
     if (_currentIndex < _queue.length - 1) {
       print('[Audio] ➡️ Moving to next song in queue');
       _currentIndex++;
-      _currentSongController.add(_queue[_currentIndex]);
-      _playSong(_queue[_currentIndex]);
-      return; // Exit function block
+      final nextSong = _getSafeQueueSong(_currentIndex);
+      if (nextSong != null) {
+        _currentSongController.add(nextSong);
+        _playSong(nextSong);
+      } else {
+        print('[Audio] ⚠️ Next song is null, stopping');
+        _audioPlayer.stop();
+      }
+      return;
     }
 
     // Step 3: Check Repeat All Gate
     if (_repeatMode == AudioServiceRepeatMode.all) {
       print('[Audio] 🔁 Repeat ALL - Wrapping to start');
       _currentIndex = 0;
-      _currentSongController.add(_queue[_currentIndex]);
-      _playSong(_queue[_currentIndex]);
-      return; // Exit function block
+      final firstSong = _getSafeQueueSong(_currentIndex);
+      if (firstSong != null) {
+        _currentSongController.add(firstSong);
+        _playSong(firstSong);
+      } else {
+        _audioPlayer.stop();
+      }
+      return;
     }
 
     // Step 4: Execute Infinite Autoplay Fallback
     if (_context == PlaybackContext.album || _context == PlaybackContext.playlist) {
       print('[Audio] 🎵 Album/Playlist ended - Starting radio mode');
-      _context = PlaybackContext.radio; // equivalent to NONE context type in spec
-      _playNextAlgorithmSong(); // API fetch, clear queue, push tracks, play index 0
-      return; // Exit function block
+      _context = PlaybackContext.radio;
+      _playNextAlgorithmSong();
+      return;
     }
 
-    // Handle existing radio/search contexts ending
     if (_context == PlaybackContext.search || _context == PlaybackContext.radio) {
       print('[Audio] 🤖 Radio/Search ended - Generating next recommendations');
       _playNextAlgorithmSong();
       return;
     }
 
-    // End of queue for local files — stopped.
     print('[Audio] ⏹ End of queue [${_context.name}] — stopped.');
     _audioPlayer.stop();
   }
@@ -277,12 +543,16 @@ class AudioServiceHandler extends BaseAudioHandler {
 
   bool _isDuplicateSong(Song newSong) {
     if (_queue.any((q) => q.id == newSong.id)) return true;
+    if (_playHistory.any((q) => q.id == newSong.id)) return true;
     
     // Fallback: title + artist fuzzy match to catch exact same songs with different IDs
     final newTitle = newSong.title.replaceAll(RegExp(r'[\(\[\-\|].*'), '').trim().toLowerCase();
     final newArtist = newSong.artist.split(',').first.trim().toLowerCase();
     
-    return _queue.any((q) {
+    // Combine queue and history for duplicate scanning
+    final memoryPool = [..._queue, ..._playHistory];
+    
+    return memoryPool.any((q) {
       final existingTitle = q.title.replaceAll(RegExp(r'[\(\[\-\|].*'), '').trim().toLowerCase();
       final existingArtist = q.artist.split(',').first.trim().toLowerCase();
       
@@ -330,9 +600,21 @@ class AudioServiceHandler extends BaseAudioHandler {
     List<Song> songs, {
     int startIndex = 0,
     PlaybackContext context = PlaybackContext.radio,
+    String? contextId,
   }) async {
     if (songs.isEmpty) return;
     _context = _inferContext(songs, context);
+
+    // Spotify/JioSaavn Auto-Shuffle Logic
+    // If playing from Search or Radio, auto-enable shuffle.
+    // If playing from Playlist, Album, or Local, auto-disable shuffle.
+    if (_context == PlaybackContext.search || _context == PlaybackContext.radio) {
+      _shuffleMode = AudioServiceShuffleMode.all;
+    } else {
+      _shuffleMode = AudioServiceShuffleMode.none;
+    }
+    playbackState.add(playbackState.value.copyWith(shuffleMode: _shuffleMode));
+
     _queue
       ..clear()
       ..addAll(songs);
@@ -342,7 +624,7 @@ class AudioServiceHandler extends BaseAudioHandler {
     
     // Apply shuffle if it's already enabled
     if (_shuffleMode == AudioServiceShuffleMode.all) {
-      print('[Audio] 🔀 Shuffle is ON - Shuffling new queue');
+      print('[Audio] 🔀 Auto-Shuffle is ON for ${_context.name} context');
       final currentSong = songs[startIndex];
       
       // Fisher-Yates shuffle
@@ -367,7 +649,8 @@ class AudioServiceHandler extends BaseAudioHandler {
       _currentIndex = startIndex.clamp(0, songs.length - 1);
     }
     
-    print('[Audio] 📂 Queue loaded [${_context.name}] '
+    _contextId = contextId;
+    print('[Audio] 📂 Queue loaded [${_context.name}] (contextId: $_contextId) '
         '${songs.length} tracks, starting at $_currentIndex (shuffle: ${_shuffleMode == AudioServiceShuffleMode.all})');
     await _playSong(_queue[_currentIndex]);
 
@@ -375,6 +658,19 @@ class AudioServiceHandler extends BaseAudioHandler {
     if (_context == PlaybackContext.search) {
       _fetchAndAppendAlgorithmSongs(_queue[_currentIndex]);
     }
+  }
+
+  /// Appends songs to the active queue and original queue dynamically.
+  void appendSongs(List<Song> songs) {
+    if (songs.isEmpty) return;
+    
+    // Add unique songs to avoid duplicate entries in the same queue
+    final newSongs = songs.where((s) => !_queue.any((q) => q.id == s.id)).toList();
+    if (newSongs.isEmpty) return;
+
+    _queue.addAll(newSongs);
+    _originalQueue.addAll(newSongs);
+    print('[Audio] ➕ Appended ${newSongs.length} tracks dynamically to current queue. Total now: ${_queue.length}');
   }
 
   /// Infers context from URL type when not explicitly given.
@@ -414,6 +710,7 @@ class AudioServiceHandler extends BaseAudioHandler {
   Future<void> _playSongInstant(Song song, {Duration seekTo = Duration.zero}) async {
     try {
       print('[Audio] ⚡ INSTANT loading: "${song.title}" seeking to ${seekTo.inSeconds}s');
+      _currentSong = song;          // ← track for completion/transition logging
       _currentSongController.add(song);
       mediaItem.add(MediaItem(
         id: song.id, title: song.title, artist: song.artist,
@@ -430,7 +727,7 @@ class AudioServiceHandler extends BaseAudioHandler {
       ));
       
       // ZERO-DELAY approach - direct loading without any cleanup or waiting
-      final url = song.previewUrl;
+      final url = OfflineStorageService.getLocalPath(song.id) ?? song.previewUrl;
       if (url != null && url.isNotEmpty) {
         if (!url.startsWith('http')) {
           // Local file - instant
@@ -451,8 +748,8 @@ class AudioServiceHandler extends BaseAudioHandler {
       print('[Audio] ❌ Instant load error: $e');
       // Fallback to basic loading
       try {
-        final url = song.previewUrl;
-        if (url != null) {
+        final url = OfflineStorageService.getLocalPath(song.id) ?? song.previewUrl;
+        if (url != null && url.isNotEmpty) {
           await _audioPlayer.setUrl(url);
           if (seekTo > Duration.zero) {
             _audioPlayer.seek(seekTo);
@@ -466,6 +763,7 @@ class AudioServiceHandler extends BaseAudioHandler {
   Future<void> _playSongPaused(Song song, {Duration seekTo = Duration.zero}) async {
     try {
       print('[Audio] 🔄 Loading paused: "${song.title}" seeking to ${seekTo.inSeconds}s');
+      _currentSong = song;          // ← track for completion/transition logging
       _currentSongController.add(song);
       mediaItem.add(MediaItem(
         id: song.id, title: song.title, artist: song.artist,
@@ -484,7 +782,7 @@ class AudioServiceHandler extends BaseAudioHandler {
       // Ultra-fast cleanup for sync - minimal delays
       await _audioPlayer.stop();
       
-      final url = song.previewUrl;
+      final url = OfflineStorageService.getLocalPath(song.id) ?? song.previewUrl;
       if (url != null && url.isNotEmpty) {
         if (!url.startsWith('http')) {
           // Local file - instant loading
@@ -493,7 +791,7 @@ class AudioServiceHandler extends BaseAudioHandler {
         } else {
           try {
             // Network stream - optimized for sync
-            await _audioPlayer.setAudioSource(LockCachingAudioSource(Uri.parse(url)));
+            await _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse(url)));
             await _audioPlayer.load();
             
             // Minimal buffering for sync - prioritize speed over buffer
@@ -521,11 +819,51 @@ class AudioServiceHandler extends BaseAudioHandler {
   }
 
   Future<void> _playSong(Song song) async {
+    final int currentSession = ++_playSessionId;
+    int waitCount = 0;
+    const maxWait = 50;
+    while (_isPlayingSong && waitCount < maxWait) {
+      await Future.delayed(const Duration(milliseconds: 25));
+      waitCount++;
+      if (_playSessionId != currentSession) {
+        print('[Audio] ℹ️ Play session cancelled while waiting for mutex');
+        return;
+      }
+    }
+
+    if (_isPlayingSong && waitCount >= maxWait) {
+      print('[Audio] ⚠️ Mutex timeout exceeded, forcing release');
+      _isPlayingSong = false;
+    }
+
+    if (_playSessionId != currentSession) return;
+    _isPlayingSong = true;
+    _hasFiredCompletion = false;
     try {
+      if (song.id.isEmpty) {
+        throw Exception('Invalid song: empty ID');
+      }
+
       print('[Audio] 🎵 ── Loading: "${song.title}" by ${song.artist} ──');
 
-      // Emit full Song (with previewUrl) so sync can use it
+      // Log transition for Metric D (Co-Occurrence Transition Matrix)
+      if (_currentSong != null && _currentSong!.id != song.id) {
+        _tasteEngine.logTransition(_currentSong!, song);
+        _globalEngine.logTransition(_currentSong!, song);
+      }
+
+      _currentSong = song;
+
+      _playHistory.add(song);
+      if (_playHistory.length > 50) {
+        _playHistory.removeAt(0);
+      }
+
       _currentSongController.add(song);
+
+      if (_context == PlaybackContext.radio || _context == PlaybackContext.search) {
+        _prepareNextAlgorithmSong();
+      }
 
       mediaItem.add(MediaItem(
         id: song.id,
@@ -543,18 +881,58 @@ class AudioServiceHandler extends BaseAudioHandler {
         },
       ));
 
-      // Properly dispose and reset player to avoid "already exists" error
-      await _audioPlayer.stop();
-      
-      // Clear any existing source completely
+      print('[Audio] ⏹ Stopping previous player instance before new source...');
       try {
-        await _audioPlayer.setAudioSource(AudioSource.uri(Uri.parse('about:blank')));
-        await Future.delayed(const Duration(milliseconds: 100)); // Brief pause to ensure cleanup
-      } catch (_) {
-        // Ignore cleanup errors
+        await _audioPlayer.stop().timeout(
+          const Duration(milliseconds: 500),
+          onTimeout: () {
+            print('[Audio] ⚠️ Stop timeout, continuing with source set');
+          },
+        );
+        await Future.delayed(const Duration(milliseconds: 150));
+      } catch (e) {
+        print('[Audio] ⚠️ Stop error (continuing): $e');
+      }
+      if (_playSessionId != currentSession) {
+        print('[Audio] ℹ️ Session changed during cleanup, aborting');
+        return;
       }
 
-      final audioUrl = song.previewUrl;
+      String? audioUrl = OfflineStorageService.getLocalPath(song.id) ?? song.previewUrl;
+
+      // Dynamically fetch missing or unstreamable URL
+      if ((audioUrl == null || audioUrl.isEmpty || audioUrl.startsWith('unstreamable')) && song.id.isNotEmpty) {
+        if (song.isYoutubeImport || song.id.startsWith('yt_') || song.youtubeUrl != null) {
+          print('[Audio] 🎬 Extracting YouTube stream URL for "${song.title}"...');
+          try {
+            final ytFreshUrl = await _ytExtractor.getFreshStreamUrl(song);
+            if (ytFreshUrl != null && ytFreshUrl.isNotEmpty) {
+              audioUrl = ytFreshUrl;
+              if (_currentIndex >= 0 && _currentIndex < _queue.length) {
+                _queue[_currentIndex] = _queue[_currentIndex].copyWith(previewUrl: ytFreshUrl);
+              }
+            }
+          } catch (_) {}
+        } else {
+          print('[Audio] 🔗 No valid URL for "${song.title}". Fetching fresh stream URL...');
+          try {
+            final freshUrl = await _directService.getFreshStreamUrl(song.id);
+            if (freshUrl != null && freshUrl.isNotEmpty) {
+              audioUrl = freshUrl;
+              // Update queue so re-queued retries or syncs have it
+              if (_currentIndex >= 0 && _currentIndex < _queue.length) {
+                _queue[_currentIndex] = _queue[_currentIndex].copyWith(previewUrl: freshUrl);
+              }
+            }
+          } catch (_) {}
+        }
+      }
+
+      // Abort if the user switched songs while we were fetching the URL
+      if (_playSessionId != currentSession) {
+        print('[Audio] ℹ️ Session changed after URL fetch, aborting');
+        return;
+      }
 
       if (audioUrl != null && audioUrl.isNotEmpty) {
         try {
@@ -562,50 +940,271 @@ class AudioServiceHandler extends BaseAudioHandler {
           if (!audioUrl.startsWith('http')) {
             print('[Audio] 📁 Playing local file: $audioUrl');
             await _audioPlayer.setAudioSource(AudioSource.uri(Uri.file(audioUrl)));
-            // Preload for faster start
             await _audioPlayer.load();
+            if (_playSessionId != currentSession) return;
             await _audioPlayer.play();
+            _consecutiveFailures = 0;
             print('[Audio] ✅ Local file playback started');
             return;
           }
 
-          print('[Audio] ▶️ Using LockCachingAudioSource with direct URL...');
-          final source = LockCachingAudioSource(Uri.parse(audioUrl));
-          await _audioPlayer.setAudioSource(source);
-          // Enhanced preloading for faster start and better sync
-          await _audioPlayer.load();
-          
+          // CDN-compatible browser headers — saavncdn.com blocks requests without
+          // a proper browser User-Agent and Referer from jiosaavn.com
+          final cdnHeaders = (song.isYoutubeImport || song.id.startsWith('yt_'))
+              ? <String, String>{
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                }
+              : <String, String>{
+                  'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                  'Referer': 'https://www.jiosaavn.com/',
+                  'Origin': 'https://www.jiosaavn.com',
+                };
+          if (_playSessionId != currentSession) {
+            print('[Audio] ℹ️ Play session changed before setUrl(), aborting');
+            return;
+          }
+          print('[Audio] ▶️ Using setUrl() with headers for: $audioUrl');
+          await _audioPlayer.setUrl(audioUrl, headers: cdnHeaders);
+          if (_playSessionId != currentSession) {
+            print('[Audio] ℹ️ Play session changed, aborting playback');
+            return;
+          }
+
           // Wait for buffering to complete for network streams
+          print('[Audio] ℹ️ Checking processingState...');
           int bufferRetries = 0;
           while (bufferRetries < 5 && _audioPlayer.processingState == ProcessingState.loading) {
             await Future.delayed(const Duration(milliseconds: 100));
             bufferRetries++;
           }
-          
+
+          if (_playSessionId != currentSession) {
+            print('[Audio] ℹ️ Play session changed after buffer delay, aborting');
+            return;
+          }
+          print('[Audio] ℹ️ Invoking play()...');
           await _audioPlayer.play();
+          _consecutiveFailures = 0; // ✅ Reset on successful play
           print('[Audio] ✅ Playback started successfully!');
           return;
         } catch (e) {
           print('[Audio] ❌ Primary source failed: $e');
-          try {
-            print('[Audio] 🔄 Trying direct setUrl...');
-            await _audioPlayer.setUrl(audioUrl);
-            await _audioPlayer.play();
-            print('[Audio] ✅ Direct URL playback started');
-            return;
-          } catch (e2) {
-            print('[Audio] ❌ Direct URL also failed: $e2');
+
+          // —— Detect "Platform player already exists" — ExoPlayer is stuck ——
+          final isStuckPlayer = e.toString().contains('already exists') ||
+              e.toString().contains('Platform player');
+
+          // —— Detect expired / invalid CDN URL (including YouTube 403/410) ——
+          final isSourceError = e.toString().contains('Source error') ||
+              e.toString().contains('403') ||
+              e.toString().contains('410') ||
+              e.toString().contains('HttpDataSourceException');
+
+          // —— Detect transient network failure (device reconnecting after AOD/sleep) ——
+          final isConnectionError = e.toString().contains('Connection aborted') ||
+              e.toString().contains('Connection reset') ||
+              e.toString().contains('Connection refused') ||
+              e.toString().contains('Failed host lookup');
+
+          if (isConnectionError) {
+            // Brief pause to let ExoPlayer's HTTP stack recover after reconnect
+            print('[Audio] 📶 Network interruption detected. Waiting 1.5s and retrying...');
+            await Future.delayed(const Duration(milliseconds: 1500));
+            if (_playSessionId != currentSession) return;
+            try {
+              const cdnHeaders = {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                'Referer': 'https://www.jiosaavn.com/',
+                'Origin': 'https://www.jiosaavn.com',
+              };
+              await _audioPlayer.setUrl(audioUrl, headers: cdnHeaders);
+              if (_playSessionId != currentSession) return;
+              await _audioPlayer.play();
+              _consecutiveFailures = 0;
+              print('[Audio] ✅ Network retry succeeded!');
+              return;
+            } catch (netRetryErr) {
+              print('[Audio] ❌ Network retry also failed: $netRetryErr');
+            }
+          } else if (isStuckPlayer) {
+            print('[Audio] 🔄 Detected stuck ExoPlayer! Resetting AudioPlayer instance...');
+            await _resetPlayer();
+            if (_playSessionId != currentSession) return;
+            // Retry the same song with the fresh player
+            print('[Audio] 🔁 Retrying "${song.title}" with fresh player...');
+            try {
+              final cdnHeaders = (song.isYoutubeImport || song.id.startsWith('yt_'))
+                  ? <String, String>{
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    }
+                  : <String, String>{
+                      'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                      'Referer': 'https://www.jiosaavn.com/',
+                      'Origin': 'https://www.jiosaavn.com',
+                    };
+              if (audioUrl.startsWith('http')) {
+                await _audioPlayer.setUrl(audioUrl, headers: cdnHeaders);
+              } else {
+                await _audioPlayer.setAudioSource(AudioSource.uri(Uri.file(audioUrl)));
+              }
+              if (_playSessionId != currentSession) return;
+              await _audioPlayer.play();
+              _consecutiveFailures = 0;
+              print('[Audio] ✅ Retry after player reset succeeded!');
+              return;
+            } catch (retryErr) {
+              print('[Audio] ❌ Retry after reset also failed: $retryErr');
+            }
+          } else if (isSourceError && (song.isYoutubeImport || song.id.startsWith('yt_') || song.youtubeUrl != null)) {
+            // YouTube stream URL expired (HTTP 403 / 410) — re-extract fresh direct stream URL from microservice
+            print('[Audio] 🔗 YouTube stream URL expired (403/410/Source error). Re-extracting for: ${song.title}...');
+            try {
+              final freshUrl = await _ytExtractor.getFreshStreamUrl(song);
+              if (freshUrl != null && freshUrl.isNotEmpty) {
+                print('[Audio] ✅ Got fresh YouTube stream URL. Updating queue + retrying...');
+                if (_playSessionId != currentSession) return;
+
+                if (_currentIndex < _queue.length) {
+                  _queue[_currentIndex] = _queue[_currentIndex].copyWith(previewUrl: freshUrl);
+                }
+
+                await _audioPlayer.setUrl(freshUrl);
+                if (_playSessionId != currentSession) return;
+                await _audioPlayer.play();
+                _consecutiveFailures = 0;
+                print('[Audio] ✅ Playback resumed with fresh YouTube stream URL!');
+                return;
+              }
+            } catch (ytRefreshErr) {
+              print('[Audio] ❌ YouTube stream refresh error: $ytRefreshErr');
+            }
+          } else if (isSourceError && song.id.isNotEmpty) {
+            // CDN URL is expired — fetch a fresh one and retry
+            print('[Audio] 🔗 CDN URL expired. Fetching fresh stream URL for song ID: ${song.id}...');
+            try {
+              final freshUrl = await _directService.getFreshStreamUrl(song.id);
+              if (freshUrl != null && freshUrl.isNotEmpty) {
+                print('[Audio] ✅ Got fresh URL. Updating queue + retrying...');
+                if (_playSessionId != currentSession) return;
+
+                // Persist the fresh URL into the queue so re-queued retries
+                // don't hit the same expired CDN token again
+                if (_currentIndex < _queue.length) {
+                  _queue[_currentIndex] = _queue[_currentIndex].copyWith(previewUrl: freshUrl);
+                }
+
+                const cdnHeaders = {
+                  'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                  'Referer': 'https://www.jiosaavn.com/',
+                  'Origin': 'https://www.jiosaavn.com',
+                };
+                await _audioPlayer.setUrl(freshUrl, headers: cdnHeaders);
+                if (_playSessionId != currentSession) return;
+                await _audioPlayer.play();
+                _consecutiveFailures = 0;
+                print('[Audio] ✅ Playback started with fresh URL!');
+                return;
+              } else {
+                print('[Audio] ⚠️ Could not get fresh URL for ${song.title} — skipping');
+              }
+            } catch (refreshErr) {
+              print('[Audio] ❌ Fresh URL fetch/play also failed: $refreshErr');
+            }
+          } else {
+            // Fallback: try AudioSource.uri in case setUrl failed for another reason
+            try {
+              print('[Audio] 🔄 Fallback: trying AudioSource.uri with headers...');
+              await _audioPlayer.stop();
+              await Future.delayed(const Duration(milliseconds: 50));
+              const cdnHeaders = {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                'Referer': 'https://www.jiosaavn.com/',
+                'Origin': 'https://www.jiosaavn.com',
+              };
+              await _audioPlayer.setAudioSource(
+                AudioSource.uri(Uri.parse(audioUrl), headers: cdnHeaders),
+              );
+              if (_playSessionId != currentSession) return;
+              print('[Audio] ℹ️ Invoking play() for fallback AudioSource.uri...');
+              await _audioPlayer.play();
+              _consecutiveFailures = 0;
+              print('[Audio] ✅ Fallback AudioSource.uri playback started');
+              return;
+            } catch (e2) {
+              print('[Audio] ❌ Fallback AudioSource.uri also failed: $e2');
+            }
           }
         }
       } else {
         print('[Audio] ⚠️ No audio URL found for this song');
+        // Explicitly handle unstreamable track by skipping it
+        _consecutiveFailures++;
+        if (_consecutiveFailures >= 2) {
+          await _resetPlayer();
+        }
+        if (_queue.length > 1) {
+          _currentIndex = (_currentIndex + 1) % _queue.length;
+          _playSong(_getSafeQueueSong(_currentIndex) ?? _queue[_currentIndex]);
+        } else {
+          _audioPlayer.stop();
+        }
+        return;
       }
 
-      print('[Audio] ⚠️ Falling back to SoundHelix...');
-      await _playFallback();
-    } catch (e) {
+      // ── Failure recovery: skip to next instead of stopping the entire queue ──
+      _consecutiveFailures++;
+      print('[Audio] ⚠️ Song failed to play. Consecutive failures: $_consecutiveFailures/$_maxConsecutiveFailures');
+
+      // Reset the player if it keeps failing — clears any stuck ExoPlayer state
+      // so the next song has a clean player to load into
+      if (_consecutiveFailures >= 2) {
+        print('[Audio] 🔄 Resetting player due to repeated failures...');
+        await _resetPlayer();
+      }
+
+      if (_consecutiveFailures >= _maxConsecutiveFailures) {
+        print('[Audio] 🛑 Too many consecutive failures. Stopping playback.');
+        _consecutiveFailures = 0;
+        await stop();
+      } else if (_currentIndex < _queue.length - 1) {
+        print('[Audio] ⏭️ Auto-skipping to next song after failure...');
+        _currentIndex++;
+        final nextSong = _getSafeQueueSong(_currentIndex);
+        if (nextSong != null) {
+          _currentSongController.add(nextSong);
+          await _playSong(nextSong);
+        } else {
+          await stop();
+        }
+      } else if (_context == PlaybackContext.search || _context == PlaybackContext.radio) {
+        print('[Audio] 🤖 End of queue after failure. Fetching algorithm recommendations...');
+        _playNextAlgorithmSong();
+      } else {
+        print('[Audio] ⏹ End of queue after failure. Stopping.');
+        await stop();
+      }
+    } catch (e, stackTrace) {
       print('[Audio] ❌ Critical error in _playSong: $e');
-      await _playFallback();
+      print('[Audio] Stack trace: $stackTrace');
+      _consecutiveFailures++;
+      if (_consecutiveFailures >= _maxConsecutiveFailures) {
+        _consecutiveFailures = 0;
+        await stop();
+      } else if (_currentIndex < _queue.length - 1) {
+        _currentIndex++;
+        final nextSong = _getSafeQueueSong(_currentIndex);
+        if (nextSong != null) {
+          _currentSongController.add(nextSong);
+          _isPlayingSong = false;
+          await _playSong(nextSong);
+          return;
+        }
+        await stop();
+      } else {
+        await stop();
+      }
+    } finally {
+      _isPlayingSong = false;
     }
   }
 
@@ -625,16 +1224,6 @@ class AudioServiceHandler extends BaseAudioHandler {
   void cancelSleepTimer() {
     _sleepTimer?.cancel();
     _sleepTimer = null;
-  }
-
-  Future<void> _playFallback() async {
-    try {
-      print('[Audio] 🔄 Playing fallback audio (SoundHelix)...');
-      await _audioPlayer.setUrl('https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3');
-      await _audioPlayer.play();
-    } catch (e) {
-      print('[Audio] ❌ Even fallback failed: $e');
-    }
   }
 
   @override
@@ -658,7 +1247,6 @@ class AudioServiceHandler extends BaseAudioHandler {
   }
 
   // ── Navigation ──────────────────────────────────────────────────────────
-  @override
   /// Insert a song to play next (right after current song)
   /// Used by 'Play Next' button in song context menus
   Future<void> playNext(Song song) async {
@@ -676,28 +1264,46 @@ class AudioServiceHandler extends BaseAudioHandler {
     }
   }
 
+  @override
   Future<void> skipToNext() async {
     try {
       print('[Audio] ⏭️ Skip to next requested');
-      if (_queue.isEmpty) return;
+      if (_queue.isEmpty) {
+        print('[Audio] ⚠️ Cannot skip: queue is empty');
+        return;
+      }
+
+      _skipDebounceTimer?.cancel();
+      _skipDebounceTimer = Timer(const Duration(milliseconds: 250), () {});
 
       if (_currentIndex < _queue.length - 1) {
-        // Normal advance — works for both sequential and pre-shuffled queues
         _currentIndex++;
-        // Ensure song details match by emitting before playing
-        _currentSongController.add(_queue[_currentIndex]);
-        await _playSong(_queue[_currentIndex]);
+        final nextSong = _getSafeQueueSong(_currentIndex);
+        if (nextSong != null) {
+          _currentSongController.add(nextSong);
+          await _playSong(nextSong);
+        } else {
+          print('[Audio] ⚠️ Skip failed: next song is null');
+        }
       } else if (_repeatMode == AudioServiceRepeatMode.all) {
-        // Wrap to beginning
         _currentIndex = 0;
-        _currentSongController.add(_queue[_currentIndex]);
-        await _playSong(_queue[_currentIndex]);
+        final firstSong = _getSafeQueueSong(_currentIndex);
+        if (firstSong != null) {
+          _currentSongController.add(firstSong);
+          await _playSong(firstSong);
+        }
       } else {
-        // No next song available -> Play a random algorithmic song
         _playNextAlgorithmSong();
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
       print('[Audio] ❌ Skip next error: $e');
+      print('[Audio] Stack trace: $stackTrace');
+      if (_currentIndex >= 0 && _currentIndex < _queue.length) {
+        final currentSong = _getSafeQueueSong(_currentIndex);
+        if (currentSong != null) {
+          _currentSongController.add(currentSong);
+        }
+      }
     }
   }
 
@@ -705,25 +1311,36 @@ class AudioServiceHandler extends BaseAudioHandler {
   Future<void> skipToPrevious() async {
     try {
       print('[Audio] ⏮️ Skip to previous requested');
-      if (_queue.isEmpty) return;
+      if (_queue.isEmpty) {
+        print('[Audio] ⚠️ Cannot skip: queue is empty');
+        return;
+      }
+
+      _skipDebounceTimer?.cancel();
+      _skipDebounceTimer = Timer(const Duration(milliseconds: 250), () {});
 
       if (_audioPlayer.position.inSeconds > 3) {
         await _audioPlayer.seek(Duration.zero);
       } else if (_currentIndex > 0) {
         _currentIndex--;
-        // Ensure song details match by emitting before playing
-        _currentSongController.add(_queue[_currentIndex]);
-        await _playSong(_queue[_currentIndex]);
+        final prevSong = _getSafeQueueSong(_currentIndex);
+        if (prevSong != null) {
+          _currentSongController.add(prevSong);
+          await _playSong(prevSong);
+        }
       } else if (_repeatMode == AudioServiceRepeatMode.all) {
         _currentIndex = _queue.length - 1;
-        _currentSongController.add(_queue[_currentIndex]);
-        await _playSong(_queue[_currentIndex]);
+        final lastSong = _getSafeQueueSong(_currentIndex);
+        if (lastSong != null) {
+          _currentSongController.add(lastSong);
+          await _playSong(lastSong);
+        }
       } else {
-        // No previous song available -> Play a random algorithmic song
         _playNextAlgorithmSong();
       }
-    } catch (e) { 
-      print('[Audio] ❌ Skip previous error: $e'); 
+    } catch (e, stackTrace) {
+      print('[Audio] ❌ Skip previous error: $e');
+      print('[Audio] Stack trace: $stackTrace');
     }
   }
 
@@ -815,152 +1432,190 @@ class AudioServiceHandler extends BaseAudioHandler {
     }
   }
 
-  Future<void> _playNextAlgorithmSong() async {
-    // Guard: never run for local files
-    if (_context == PlaybackContext.local) return;
+  // Pre-fetched recommendations to ensure zero-latency transitions
+  List<Song>? _preFetchedQueue;
+  String? _preFetchedForSongId;
 
+  Future<void> _prepareNextAlgorithmSong() async {
+    if (_context == PlaybackContext.local) return;
     final seedSong = _queue.isNotEmpty ? _queue[_currentIndex] : null;
     if (seedSong == null) return;
+    
+    if (_preFetchedForSongId == seedSong.id) return; // Already prepared
 
+    final int currentSession = _playSessionId;
+
+    print('[Hybrid Engine] ⚡ Pre-fetching next-gen 4-way hybrid recommendations for "${seedSong.title}"...');
+    
     try {
-      print('[ML Algorithm] 🤖 Generating AI-powered recommendations...');
-      print('[Phase 1] 🎵 Ingestion & Analysis - Extracting audio features');
-      print('[Phase 2] 📊 Data Aggregation - Analyzing patterns');
-      print('[Phase 3] 🧠 ML Engine - Matrix factorization & Cosine similarity');
-      print('[Phase 4] 🚀 Queue Delivery - Optimizing recommendations');
+      final List<Song> candidates = [];
+      final Set<String> seenIds = {seedSong.id}; // Don't recommend the current song
+      
+      // Let's run A and B concurrently, plus fetch global transitions from Firestore!
+      final futures = await Future.wait([
+        _mlEngine.deliverRecommendations(seedSong: seedSong, limit: 10),
+        _hybridSearch.getTrendingTracks(limit: 10),
+      ]);
+      
+      final globalTransitions = await _globalEngine.getGlobalTransitions(seedSong.id);
+      
+      for (final list in futures) {
+        for (final song in list) {
+          if (!seenIds.contains(song.id) && !_isDuplicateSong(song)) {
+            candidates.add(song);
+            seenIds.add(song.id);
+          }
+        }
+      }
 
-      // Use ML Recommendation Engine (4-phase pipeline)
-      final recommendations = await _mlEngine.deliverRecommendations(
-        seedSong: seedSong,
-        limit: 20,
+      // If we still don't have enough candidates, fallback to artist search
+      if (candidates.length < 5) {
+        final artistQuery = seedSong.artist.split(',').first.trim();
+        final fallback = await _hybridSearch.searchSongs(artistQuery, limit: 10);
+        for (final song in fallback) {
+          if (!seenIds.contains(song.id) && !_isDuplicateSong(song)) {
+            candidates.add(song);
+            seenIds.add(song.id);
+          }
+        }
+      }
+
+      // Now apply the Next-Gen 4-Way Hybrid Scoring Pipeline
+      // Pass 1: Candidates already gathered.
+      
+      // Fetch Metric B: Global Play Counts (Velocity)
+      final globalPlayCounts = await _globalEngine.getGlobalPlayCounts(candidates.map((c) => c.id).toList());
+      // Fetch Metric C: Market Trends (simplified by checking trending API response)
+      final trendingTracks = await _hybridSearch.getTrendingTracks(limit: 50);
+      final trendingIds = trendingTracks.map((t) => t.id).toSet();
+
+      // Extract all local taste matrix features
+      final seedTransitions = Map<String, int>.from(
+        _tasteEngine.getTransitionsForSong(seedSong.id).map(
+          (k, v) => MapEntry(k.toString(), v as int? ?? 0)
+        )
+      );
+      final topArtists = _tasteEngine.getTopArtists();
+      
+      final favoriteSongIds = <String>{};
+      final customPlaylistSongIds = <String>{};
+      if (Hive.isBoxOpen('userPlaylists')) {
+        final playlistsBox = Hive.box<String>('userPlaylists');
+        for (final key in playlistsBox.keys) {
+          final val = playlistsBox.get(key);
+          if (val is String) {
+            try {
+              final playlistMap = jsonDecode(val) as Map<String, dynamic>;
+              final playlistId = playlistMap['id']?.toString() ?? '';
+              final songsList = playlistMap['songs'] as List? ?? [];
+              for (final s in songsList) {
+                if (s is Map && s['id'] != null) {
+                  final id = s['id'].toString();
+                  if (playlistId == 'favorites_playlist_id') {
+                    favoriteSongIds.add(id);
+                  } else {
+                    customPlaylistSongIds.add(id);
+                  }
+                }
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
+      final recentSongPlayCounts = <String, int>{};
+      if (Hive.isBoxOpen('recentlyPlayed')) {
+        final recentlyBox = Hive.box<String>('recentlyPlayed');
+        final list = recentlyBox.values.toList();
+        for (final val in list) {
+          if (val.isNotEmpty) {
+            try {
+              final songMap = jsonDecode(val) as Map<String, dynamic>;
+              final id = songMap['id']?.toString();
+              if (id != null) {
+                recentSongPlayCounts[id] = (recentSongPlayCounts[id] ?? 0) + 1;
+              }
+            } catch (_) {}
+          }
+        }
+      }
+
+      final songHistoryCounts = Map<String, int>.from(
+        _tasteEngine.getSongHistory().map(
+          (k, v) => MapEntry(k.toString(), v as int? ?? 0)
+        )
       );
 
-      if (recommendations.isNotEmpty) {
-        print('[ML Algorithm] ✅ Generated ${recommendations.length} AI-powered recommendations');
-        
-        // Clear and update queue
-        _queue.clear();
-        _originalQueue.clear();
-        _queue.addAll(recommendations);
-        _originalQueue.addAll(recommendations);
-        _currentIndex = 0;
-        
-        // Switch to radio context for continuous playback
-        _context = PlaybackContext.radio;
-        
-        await _playSong(_queue[_currentIndex]);
+      final payload = RecommendationComputePayload(
+        seedSongMap: seedSong.toJson(),
+        candidateSongMaps: candidates.map((c) => c.toJson()).toList(),
+        globalTransitions: globalTransitions,
+        globalPlayCounts: globalPlayCounts,
+        trendingIds: trendingIds,
+        playHistoryMaps: _playHistory.map((h) => h.toJson()).toList(),
+        seedTransitions: seedTransitions,
+        topArtists: topArtists,
+        favoriteSongIds: favoriteSongIds,
+        customPlaylistSongIds: customPlaylistSongIds,
+        recentSongPlayCounts: recentSongPlayCounts,
+        songHistoryCounts: songHistoryCounts,
+      );
+
+      print('[Hybrid Engine] 🤖 Offloading 4-way hybrid scoring to background Isolate...');
+      final finalQueue = await compute(_calculateAffinityScores, payload);
+      
+      // Strict Mutex Lock Check: if the user initiated manual navigation, abort.
+      if (currentSession != _playSessionId) {
+        print('[Hybrid Engine] 🛑 Aborting pre-fetch: Play session was interrupted manually.');
         return;
       }
-    } catch (e) {
-      print('[ML Algorithm] ⚠️ ML engine failed: $e, falling back to basic algorithm');
-    }
 
-    // Fallback to basic algorithm if ML fails
-    await _playNextAlgorithmSongFallback();
-  }
-
-  /// Fallback algorithm (original implementation)
-  Future<void> _playNextAlgorithmSongFallback() async {
-    const apiBase = 'https://jiosaavn-api-peach.vercel.app/api';
-    final seedSong = _queue.isNotEmpty ? _queue[_currentIndex] : null;
-    if (seedSong == null) return;
-
-    // Quick title-based check to skip short remakes
-    bool isTrendingVersion(Map<String, dynamic> r) {
-      final t = '${r['name'] ?? ''} ${r['album']?['name'] ?? ''}'.toLowerCase();
-      return t.contains('trending version') ||
-          t.contains('trending remake') ||
-          t.contains('speed up') ||
-          t.contains('sped up') ||
-          t.contains('slowed reverb') ||
-          t.contains('lofi version') ||
-          t.contains('short version');
-    }
-
-    try {
-      print('[Algorithm] 🧠 Finding fallback tracks based on: "${seedSong.title}"');
-
-      final primaryArtist = seedSong.artist.split(',').first.trim();
-      // Search for the artist to create an "Artist Radio" experience
-      final query = primaryArtist;
-
-      for (final base in [apiBase, 'https://saavn.dev/api']) {
-        try {
-          final response = await _dio.get(
-            '$base/search/songs',
-            queryParameters: {'query': query, 'limit': 40, 'page': 1},
-          );
-          if (response.data?['success'] == true) {
-            final results = response.data['data']?['results'] as List? ?? [];
-            final newSongs = results
-                .whereType<Map<String, dynamic>>()
-                .where((r) => !isTrendingVersion(r))
-                .map((r) => _parseSong(r))
-                .where((s) =>
-                    s.previewUrl != null &&
-                    s.previewUrl!.isNotEmpty &&
-                    (s.duration.inSeconds == 0 || s.duration.inSeconds >= 90))
-                .where((s) => !_isDuplicateSong(s))
-                .toList();
-            if (newSongs.isNotEmpty) {
-              print('[Algorithm] ✅ Pushing ${newSongs.length} recommended tracks to queue.');
-              
-              // Clear active_queue and original_queue
-              _queue.clear();
-              _originalQueue.clear();
-              
-              // Push recommended tracks into active_queue
-              _queue.addAll(newSongs);
-              _originalQueue.addAll(newSongs);
-              
-              // Set current_index to 0
-              _currentIndex = 0;
-              
-              // Switch context to radio so subsequent ends also autoplay
-              _context = PlaybackContext.radio;
-              await _playSong(_queue[_currentIndex]);
-              return;
-            }
-          }
-        } catch (_) {}
-      }
-
-      for (final base in [apiBase, 'https://saavn.dev/api']) {
-        try {
-          final trending = await _dio.get(
-            '$base/search/songs',
-            queryParameters: {'query': 'latest hits', 'limit': 40},
-          );
-          if (trending.data?['success'] == true) {
-            final results = trending.data['data']?['results'] as List? ?? [];
-            if (results.isNotEmpty) {
-              final newSongs = results
-                  .whereType<Map<String, dynamic>>()
-                  .map((r) => _parseSong(r))
-                  .where((s) => s.previewUrl != null && s.previewUrl!.isNotEmpty)
-                  .toList();
-                  
-              if (newSongs.isNotEmpty) {
-                newSongs.shuffle(); // Shuffle the fallback so it doesn't always play the exact same sequence
-                print('[Algorithm] ⚠️ API failed, pushed ${newSongs.length} trending fallbacks.');
-                
-                _queue.clear();
-                _originalQueue.clear();
-                _queue.addAll(newSongs);
-                _originalQueue.addAll(newSongs);
-                _currentIndex = 0;
-                _context = PlaybackContext.radio;
-                await _playSong(_queue[_currentIndex]);
-                return;
-              }
-            }
-          }
-        } catch (_) {}
+      if (finalQueue.isNotEmpty) {
+        _preFetchedQueue = finalQueue;
+        _preFetchedForSongId = seedSong.id;
+        print('[Hybrid Engine] ✅ Pre-fetched and scored ${finalQueue.length} tracks.');
       }
     } catch (e) {
-      print('[Algorithm] ❌ Failed to fetch: $e');
+      print('[Hybrid Engine] ⚠️ Pre-fetch failed: $e');
     }
   }
+
+  Future<void> _playNextAlgorithmSong() async {
+    if (_context == PlaybackContext.local) return;
+
+    if (_preFetchedQueue != null && _preFetchedQueue!.isNotEmpty) {
+      print('[Hybrid Engine] 🚀 Playing zero-latency pre-fetched queue!');
+      await _loadAndPlayAlgorithmQueue(_preFetchedQueue!, 'Native 4-Way Hybrid');
+      _preFetchedQueue = null; // Clear after use
+      return;
+    }
+    
+    // If not pre-fetched, prepare now and play
+    await _prepareNextAlgorithmSong();
+    if (_preFetchedQueue != null && _preFetchedQueue!.isNotEmpty) {
+      await _loadAndPlayAlgorithmQueue(_preFetchedQueue!, 'Native 4-Way Hybrid');
+      _preFetchedQueue = null;
+    } else {
+      print('[Hybrid Engine] ❌ All recommendations failed. Stopping playback.');
+      await stop();
+    }
+  }
+
+  Future<void> _loadAndPlayAlgorithmQueue(List<Song> songs, String sourceName) async {
+    final validSongs = songs.where((s) => s.previewUrl != null && s.previewUrl!.isNotEmpty).toList();
+    if (validSongs.isEmpty) return;
+
+    print('[Hybrid Engine] 🚀 Loading $sourceName queue with ${validSongs.length} items. Playing: "${validSongs.first.title}"');
+    _queue.clear();
+    _originalQueue.clear();
+    _queue.addAll(validSongs);
+    _originalQueue.addAll(validSongs);
+    _currentIndex = 0;
+    _context = PlaybackContext.radio;
+    await _playSong(_queue[_currentIndex]);
+  }
+
+  // REMOVED FIREBASE CALLS
 
   SongModel _parseSong(Map<String, dynamic> r) {
     // Artists — join primary artists
@@ -1037,16 +1692,12 @@ class AudioServiceHandler extends BaseAudioHandler {
     }
   }
 
-  @override
-  Future<void> onTaskRemoved() async {
-    // Override to prevent stopping when app is removed from recent apps
-    // This helps maintain playback during AOD and background usage
-    print('[Audio] 📱 Task removed - maintaining background playback');
-  }
+
 
   void dispose() {
     _currentSongController.close();
     _dio.close();
+    _hybridSearch.dispose();
     _mlEngine.dispose();
     _audioPlayer.dispose();
   }
@@ -1063,3 +1714,260 @@ class SongModel extends Song {
     super.previewUrl,
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Isolate Recommendation Scoring DTO & Processor
+// ─────────────────────────────────────────────────────────────────────────────
+
+class RecommendationComputePayload {
+  final Map<String, dynamic> seedSongMap;
+  final List<Map<String, dynamic>> candidateSongMaps;
+  final Map<String, int> globalTransitions;
+  final Map<String, int> globalPlayCounts;
+  final Set<String> trendingIds;
+  final List<Map<String, dynamic>> playHistoryMaps;
+  
+  // Local Taste Matrix parameters
+  final Map<String, int> seedTransitions;
+  final List<String> topArtists;
+  final Set<String> favoriteSongIds;
+  final Set<String> customPlaylistSongIds;
+  final Map<String, int> recentSongPlayCounts;
+  final Map<String, int> songHistoryCounts;
+
+  RecommendationComputePayload({
+    required this.seedSongMap,
+    required this.candidateSongMaps,
+    required this.globalTransitions,
+    required this.globalPlayCounts,
+    required this.trendingIds,
+    required this.playHistoryMaps,
+    required this.seedTransitions,
+    required this.topArtists,
+    required this.favoriteSongIds,
+    required this.customPlaylistSongIds,
+    required this.recentSongPlayCounts,
+    required this.songHistoryCounts,
+  });
+}
+
+/// Static top-level processor executing entirely on a background Isolate thread.
+List<Song> _calculateAffinityScores(RecommendationComputePayload payload) {
+  final seedSong = Song.fromJson(payload.seedSongMap);
+  final candidates = payload.candidateSongMaps.map((m) => Song.fromJson(m)).toList();
+  final playHistory = payload.playHistoryMaps.map((m) => Song.fromJson(m)).toList();
+
+  final seedLang = _inferLanguageStatic(seedSong);
+
+  // Track consecutive played count of seedLang in playHistory to prevent silos
+  int consecutiveLanguageCount = 0;
+  for (int i = playHistory.length - 1; i >= 0; i--) {
+    if (_inferLanguageStatic(playHistory[i]) == seedLang) {
+      consecutiveLanguageCount++;
+    } else {
+      break;
+    }
+  }
+
+  final scoredCandidates = candidates.map((song) {
+    // 1. Calculate local affinity score
+    double score = 0.0;
+
+    // Co-occurrence check
+    final int transitionCount = payload.seedTransitions[song.id] ?? 0;
+    if (transitionCount > 0) {
+      score += (transitionCount * 5.0);
+    }
+
+    // Top artist affinity
+    final candidateArtists = song.artist.split(',').map((e) => e.trim());
+    for (final artist in candidateArtists) {
+      if (payload.topArtists.contains(artist)) {
+        score += 1.5;
+      }
+    }
+
+    // Favorites & Custom Playlist checks
+    if (payload.favoriteSongIds.contains(song.id)) {
+      score += 3.0;
+    } else if (payload.customPlaylistSongIds.contains(song.id)) {
+      score += 2.0;
+    }
+
+    // Recently Played check
+    final recentCount = payload.recentSongPlayCounts[song.id] ?? 0;
+    if (recentCount > 0) {
+      score += (recentCount * 1.0);
+    }
+
+    // Overall song frequency play count check
+    final int songPlayCount = payload.songHistoryCounts[song.id] ?? 0;
+    if (songPlayCount > 0) {
+      score += (songPlayCount * 0.5);
+    }
+
+    // 2. Global transitions
+    if (payload.globalTransitions.containsKey(song.id)) {
+      score += (payload.globalTransitions[song.id]! * 2.0);
+    }
+
+    // 3. Global play counts
+    if (payload.globalPlayCounts.containsKey(song.id)) {
+      final count = payload.globalPlayCounts[song.id]!;
+      if (count > 0) {
+        score *= (1.0 + (count * 0.01));
+      }
+    }
+
+    // 4. Market trends
+    if (payload.trendingIds.contains(song.id)) {
+      score *= 1.4;
+    }
+
+    // 5. Regional Linguistic modifier
+    final candidateLang = _inferLanguageStatic(song);
+    double linguisticModifier = 1.0;
+
+    // Linguistic Weighting
+    if (candidateLang == seedLang) {
+      linguisticModifier *= 1.5;
+    }
+
+    // Silo Prevention
+    if (consecutiveLanguageCount >= 4 && candidateLang == seedLang) {
+      linguisticModifier *= 0.3;
+    } else if (consecutiveLanguageCount >= 4 && candidateLang != seedLang) {
+      linguisticModifier *= 2.0;
+    }
+
+    // Cross-Language Leakage Bridges
+    if (seedLang == 'hindi' && candidateLang == 'punjabi') {
+      linguisticModifier *= 1.3;
+    } else if (seedLang == 'hindi' && candidateLang == 'bhojpuri') {
+      linguisticModifier *= 1.2;
+    } else if (seedLang == 'bengali' && candidateLang == 'hindi') {
+      linguisticModifier *= 1.4;
+    } else if (seedLang == 'bhojpuri' && candidateLang == 'hindi') {
+      linguisticModifier *= 1.3;
+    }
+
+    score *= linguisticModifier;
+
+    // Recency Penalty (Strict loop prevention)
+    if (playHistory.any((h) => h.id == song.id)) {
+      score = 0.0;
+    }
+
+    // Add random slight variance to break ties
+    if (score > 0) {
+      score += (Random().nextDouble() * 0.5);
+    }
+
+    return MapEntry(song, score);
+  }).toList();
+
+  // Sort by score descending
+  scoredCandidates.sort((a, b) => b.value.compareTo(a.value));
+
+  // Take top 10
+  return scoredCandidates.take(10).map((e) => e.key).toList();
+}
+
+/// Helper method to statically infer song language in the background Isolate.
+String _inferLanguageStatic(Song song) {
+  // 1. Direct check
+  if (song.language != null && song.language!.isNotEmpty) {
+    final lang = song.language!.toLowerCase();
+    if (lang.contains('hindi') || lang == 'hi') return 'hindi';
+    if (lang.contains('punjabi') || lang == 'pa') return 'punjabi';
+    if (lang.contains('bhojpuri')) return 'bhojpuri';
+    if (lang.contains('bengali') || lang == 'bn') return 'bengali';
+    return lang;
+  }
+
+  final titleLower = song.title.toLowerCase();
+  final artistLower = song.artist.toLowerCase();
+
+  // 2. Artist profile check
+  const Map<String, String> artistLanguageMap = {
+    'arijit singh': 'hindi',
+    'shreya ghoshal': 'hindi',
+    'alka yagnik': 'hindi',
+    'udit narayan': 'hindi',
+    'kumar sanu': 'hindi',
+    'diljit dosanjh': 'punjabi',
+    'ap dhillon': 'punjabi',
+    'guru randhawa': 'punjabi',
+    'b praak': 'punjabi',
+    'pawan singh': 'bhojpuri',
+    'khesari lal yadav': 'bhojpuri',
+    'shilpi raj': 'bhojpuri',
+    'anupam roy': 'bengali',
+    'rupanakr': 'bengali',
+    'shaan': 'hindi',
+    'sidhu moose wala': 'punjabi',
+  };
+
+  for (final entry in artistLanguageMap.entries) {
+    if (artistLower.contains(entry.key)) {
+      return entry.value;
+    }
+  }
+
+  // 3. Token-based phonetic dictionary analysis
+  const Map<String, Set<String>> phoneticDictionaries = {
+    'hindi': {
+      'pyar', 'pyaar', 'dil', 'mera', 'ishq', 'teri', 'tere', 'meri', 'tujhe', 'tum', 
+      'se', 'hai', 'ki', 'ka', 'ke', 'aur', 'na', 'jiya', 'dhadkan', 'sanam', 'tu', 'mujhse', 'hum', 
+      'tumhare', 'zindagi', 'mohabbat', 'dost', 'yaar', 'yaara', 'jaane', 'jaana', 'raahi', 'ho', 'gaya',
+      'ek', 'do', 'teen', 'main', 'hoon', 'kya', 'batayein', 'kaise', 'mile', 'chalte', 'duniya', 'dhadak'
+    },
+    'punjabi': {
+      'kudi', 'munda', 'gabru', 'pind', 'punjabi', 'jatt', 've', 'bhangra', 'dhol', 'nach', 'suit', 
+      'nakhra', 'gaddi', 'gaddiyaan', 'mittran', 'ni', 'hath', 'sardar', 'singh', 'kaur', 'panjabo',
+      'naal', 'changa', 'vadiya', 'kol', 'chadd', 'viah', 'je', 'patiala'
+    },
+    'bhojpuri': {
+      'kamariya', 'lagawe', 'lipistick', 'lipistik', 'bhojpuri', 'gori', 'tohar', 'ba', 'laika', 
+      'choli', 'bhatar', 'sautin', 'patna', 'pawan', 'khesari', 'lahanga', 'marad', 'maro', 'saiyaan', 
+      'bhojpuria', 'tore', 'maai', 'piya', 'kajar', 'luliya', 'hamar'
+    },
+    'bengali': {
+      'bengali', 'bangla', 'tumi', 'aami', 'bhalobashi', 'amar', 'tomar', 'kothay', 'mon', 'bhalo', 
+      'shundor', 'gaan', 'brishti', 'shonar', 'chaai', 'hobe', 'kotha', 'dekha', 'bhalobasa', 'golpo',
+      'bhalobese', 'moner', 'kache', 'chara', 'keu'
+    },
+  };
+
+  final tokens = titleLower.split(RegExp(r'[^a-zA-Z0-9]+')).where((t) => t.isNotEmpty);
+  final scores = <String, int>{'hindi': 0, 'punjabi': 0, 'bhojpuri': 0, 'bengali': 0};
+
+  for (final token in tokens) {
+    for (final lang in phoneticDictionaries.keys) {
+      if (phoneticDictionaries[lang]!.contains(token)) {
+        scores[lang] = scores[lang]! + 1;
+      }
+    }
+  }
+
+  String? bestLang;
+  int maxScore = 0;
+  scores.forEach((lang, score) {
+    if (score > maxScore) {
+      maxScore = score;
+      bestLang = lang;
+    }
+  });
+
+  if (maxScore > 0 && bestLang != null) {
+    return bestLang!;
+  }
+
+  // 4. Substring fallback checks
+  if (titleLower.contains('bhojpuri')) return 'bhojpuri';
+  if (titleLower.contains('punjabi')) return 'punjabi';
+  if (titleLower.contains('bengali') || titleLower.contains('bangla')) return 'bengali';
+
+  return 'hindi';
+}
+

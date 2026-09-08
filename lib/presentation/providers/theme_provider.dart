@@ -8,11 +8,20 @@ final themeModeProvider =
   return ThemeModeNotifier();
 });
 
+final themeColorProvider =
+    StateNotifierProvider<ThemeColorNotifier, String>((ref) {
+  return ThemeColorNotifier();
+});
+
 final darkThemeProvider = Provider<ThemeData>((ref) {
+  ref.watch(themeModeProvider);
+  ref.watch(themeColorProvider);
   return _buildDarkTheme();
 });
 
 final lightThemeProvider = Provider<ThemeData>((ref) {
+  ref.watch(themeModeProvider);
+  ref.watch(themeColorProvider);
   return _buildLightTheme();
 });
 
@@ -28,12 +37,19 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
     _themeBox = await Hive.openBox<String>('theme_prefs');
     final savedTheme = _themeBox.get(_themeKey, defaultValue: 'dark');
     state = _stringToThemeMode(savedTheme!);
+    _apply();
   }
 
   Future<void> toggleTheme() async {
     final newMode = state == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
     state = newMode;
     await _themeBox.put(_themeKey, _themeModeToString(newMode));
+    _apply();
+  }
+
+  void _apply() {
+    final accent = _themeBox.get('theme_accent', defaultValue: 'pink')!;
+    AppColors.applyTheme(isDark: state == ThemeMode.dark, accentName: accent);
   }
 
   ThemeMode _stringToThemeMode(String value) {
@@ -45,19 +61,60 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
   }
 }
 
+class ThemeColorNotifier extends StateNotifier<String> {
+  static const String _accentKey = 'theme_accent';
+  late Box<String> _themeBox;
+
+  ThemeColorNotifier() : super('pink') {
+    _initTheme();
+  }
+
+  Future<void> _initTheme() async {
+    _themeBox = await Hive.openBox<String>('theme_prefs');
+    final savedAccent = _themeBox.get(_accentKey, defaultValue: 'pink');
+    state = savedAccent!;
+    _apply();
+  }
+
+  void _apply() {
+    final isDark = _themeBox.get('theme_mode', defaultValue: 'dark') == 'dark';
+    AppColors.applyTheme(isDark: isDark, accentName: state);
+  }
+
+  Future<void> setAccentColor(String name) async {
+    state = name;
+    await _themeBox.put(_accentKey, name);
+    _apply();
+  }
+}
+
 ThemeData _buildDarkTheme() {
   return ThemeData(
     useMaterial3: true,
     brightness: Brightness.dark,
     scaffoldBackgroundColor: AppColors.deepSpaceBlack,
-    primaryColor: AppColors.neonPurple,
-    colorScheme: const ColorScheme.dark(
-      primary: AppColors.neonPurple,
-      secondary: AppColors.neonCyan,
+    primaryColor: AppColors.neonPink,
+    colorScheme: ColorScheme.dark(
+      primary: AppColors.neonPink,
+      secondary: AppColors.neonCoral,
       surface: AppColors.deepSpaceBlackLight,
       error: AppColors.neonPink,
     ),
-    appBarTheme: const AppBarTheme(
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: const Color(0xFF1E1E26),
+      contentTextStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: Color(0x2AFFFFFF)),
+      ),
+      behavior: SnackBarBehavior.floating,
+      elevation: 8,
+    ),
+    appBarTheme: AppBarTheme(
       backgroundColor: AppColors.deepSpaceBlack,
       elevation: 0,
       centerTitle: true,
@@ -67,22 +124,11 @@ ThemeData _buildDarkTheme() {
         fontWeight: FontWeight.w600,
       ),
     ),
-    textTheme: const TextTheme(
-      displayLarge: TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: 32,
-        fontWeight: FontWeight.bold,
-      ),
-      bodyLarge: TextStyle(
-        color: AppColors.textPrimary,
-        fontSize: 16,
-      ),
-      bodyMedium: TextStyle(
-        color: AppColors.textSecondary,
-        fontSize: 14,
-      ),
+    textTheme: TextStyleTheme(
+      AppColors.textPrimary,
+      AppColors.textSecondary,
     ),
-    iconTheme: const IconThemeData(color: AppColors.textPrimary),
+    iconTheme: IconThemeData(color: AppColors.textPrimary),
   );
 }
 
@@ -90,39 +136,61 @@ ThemeData _buildLightTheme() {
   return ThemeData(
     useMaterial3: true,
     brightness: Brightness.light,
-    scaffoldBackgroundColor: AppColors.cloudWhite,
-    primaryColor: AppColors.neonPurple,
-    colorScheme: const ColorScheme.light(
-      primary: AppColors.neonPurple,
-      secondary: AppColors.neonCyan,
-      surface: AppColors.cloudWhiteLight,
+    scaffoldBackgroundColor: AppColors.deepSpaceBlack, // AppColors.deepSpaceBlack mapped dynamically
+    primaryColor: AppColors.neonPink,
+    colorScheme: ColorScheme.light(
+      primary: AppColors.neonPink,
+      secondary: AppColors.neonCoral,
+      surface: AppColors.deepSpaceBlackLight,
       error: AppColors.neonPink,
     ),
-    appBarTheme: const AppBarTheme(
-      backgroundColor: AppColors.cloudWhite,
+    snackBarTheme: SnackBarThemeData(
+      backgroundColor: const Color(0xFF1E1E26),
+      contentTextStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: Color(0x2AFFFFFF)),
+      ),
+      behavior: SnackBarBehavior.floating,
+      elevation: 8,
+    ),
+    appBarTheme: AppBarTheme(
+      backgroundColor: AppColors.deepSpaceBlack,
       elevation: 0,
       centerTitle: true,
       titleTextStyle: TextStyle(
-        color: AppColors.deepSpaceBlack,
+        color: AppColors.textPrimary,
         fontSize: 20,
         fontWeight: FontWeight.w600,
       ),
     ),
-    textTheme: const TextTheme(
-      displayLarge: TextStyle(
-        color: AppColors.deepSpaceBlack,
-        fontSize: 32,
-        fontWeight: FontWeight.bold,
-      ),
-      bodyLarge: TextStyle(
-        color: AppColors.deepSpaceBlack,
-        fontSize: 16,
-      ),
-      bodyMedium: TextStyle(
-        color: Color(0xFF666666),
-        fontSize: 14,
-      ),
+    textTheme: TextStyleTheme(
+      AppColors.textPrimary,
+      AppColors.textSecondary,
     ),
-    iconTheme: const IconThemeData(color: AppColors.deepSpaceBlack),
+    iconTheme: IconThemeData(color: AppColors.textPrimary),
+  );
+}
+
+// Helper TextTheme wrapper to avoid duplicate styling
+TextTheme TextStyleTheme(Color primary, Color secondary) {
+  return TextTheme(
+    displayLarge: TextStyle(
+      color: primary,
+      fontSize: 32,
+      fontWeight: FontWeight.bold,
+    ),
+    bodyLarge: TextStyle(
+      color: primary,
+      fontSize: 16,
+    ),
+    bodyMedium: TextStyle(
+      color: secondary,
+      fontSize: 14,
+    ),
   );
 }

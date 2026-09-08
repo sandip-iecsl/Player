@@ -5,8 +5,9 @@ import '../../data/services/audio_service.dart'; // PlaybackContext
 import '../../domain/entities/song.dart';
 import '../providers/audio_provider.dart';
 import '../providers/history_provider.dart';
-import '../providers/playlist_provider.dart';
+import '../providers/music_data_providers.dart';
 import '../widgets/playlist_dialogs.dart';
+import '../../core/constants/app_colors.dart';
 
 class PlaylistScreen extends ConsumerStatefulWidget {
   final String? playlistId;
@@ -27,15 +28,118 @@ class PlaylistScreen extends ConsumerStatefulWidget {
 }
 
 class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
-  // De-duplicate once at state level — stable across rebuilds
-  late final List<Song> _songs;
+  // Dynamic list of songs for pagination support
+  final List<Song> _songs = [];
   bool _isShuffleOn = false;
+
+  // Pagination state
+  final ScrollController _scrollController = ScrollController();
+  bool _isLoadingMore = false;
+  bool _hasMoreResults = true;
+  int _currentPage = 1;
+  static const int _pageSize = 20;
 
   @override
   void initState() {
     super.initState();
     final seen = <String>{};
-    _songs = widget.songs.where((s) => seen.add(s.id)).toList();
+    _songs.addAll(widget.songs.where((s) => seen.add(s.id)));
+    
+    if (widget.playlistId != null) {
+      _scrollController.addListener(_onScroll);
+      _currentPage = (_songs.length / _pageSize).ceil();
+      if (_songs.length < 20) {
+        _hasMoreResults = false;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    
+    final position = _scrollController.position;
+    final threshold = position.maxScrollExtent - 200;
+    
+    if (position.pixels >= threshold) {
+      if (!_isLoadingMore && _hasMoreResults) {
+        _loadMoreTracks();
+      }
+    }
+  }
+
+  Future<void> _loadMoreTracks() async {
+    if (_isLoadingMore || !_hasMoreResults || widget.playlistId == null) return;
+    
+    setState(() => _isLoadingMore = true);
+    
+    try {
+      final spotify = ref.read(spotifyServiceProvider);
+      final hybrid  = ref.read(hybridSearchServiceProvider);
+      
+      debugPrint('[PlaylistScreen] 🔄 Loading page $_currentPage for playlist: ${widget.playlistId}');
+      
+      final tracks = await spotify.getPlaylistTracks(
+        widget.playlistId!, 
+        limit: 50, 
+        offset: _currentPage * 50,
+      );
+      
+      if (tracks.isEmpty) {
+        if (mounted) {
+          setState(() {
+            _hasMoreResults = false;
+            _isLoadingMore = false;
+          });
+        }
+        return;
+      }
+      
+      // Resolve these tracks to JioSaavn playable songs
+      final resolvedSongs = <Song>[];
+      for (final t in tracks) {
+        final results = await hybrid.searchSongs('${t.title} ${t.artist}', limit: 1);
+        if (results.isNotEmpty) {
+          resolvedSongs.add(results.first);
+        }
+        if (resolvedSongs.length >= 20) break;
+      }
+      
+      if (mounted) {
+        setState(() {
+          if (resolvedSongs.isEmpty) {
+            _hasMoreResults = false;
+          } else {
+            final existingIds = _songs.map((s) => s.id).toSet();
+            final uniqueNewSongs = resolvedSongs.where((s) => !existingIds.contains(s.id)).toList();
+            
+            if (uniqueNewSongs.isEmpty) {
+              _hasMoreResults = false;
+            } else {
+              _songs.addAll(uniqueNewSongs);
+              _currentPage++;
+              
+              // Sync with active queue if user is playing from this playlist
+              final audio = ref.read(audioServiceProvider);
+              if (audio.currentContext == PlaybackContext.playlist && audio.currentContextId == widget.playlistId) {
+                audio.appendSongs(uniqueNewSongs);
+              }
+            }
+          }
+          _isLoadingMore = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[PlaylistScreen] ❌ Error loading more tracks: $e');
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
+    }
   }
 
   // ── Play all ─────────────────────────────────────────────────────────────
@@ -55,6 +159,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
       queue,
       startIndex: startIndex,
       context: PlaybackContext.playlist, // → stops at end, no autoplay
+      contextId: widget.playlistId,
     );
     ref.read(recentlyPlayedProvider.notifier).add(queue[startIndex]);
   }
@@ -99,21 +204,22 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
         isPlaying && _songs.any((s) => s.id == currentSong?.id);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.deepSpaceBlack,
       body: CustomScrollView(
+        controller: _scrollController,
         slivers: [
           // ── Header ────────────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 280,
             pinned: true,
-            backgroundColor: Colors.black,
+            backgroundColor: AppColors.deepSpaceBlack,
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [Colors.grey.shade800, Colors.black],
+                    colors: [AppColors.deepSpaceBlackLight, AppColors.deepSpaceBlack],
                   ),
                 ),
                 child: Column(
@@ -124,7 +230,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                       decoration: BoxDecoration(
                         boxShadow: [
                           BoxShadow(
-                            color: Colors.black.withOpacity(0.5),
+                            color: AppColors.deepSpaceBlack.withOpacity(0.5),
                             offset: const Offset(0, 10),
                             blurRadius: 20,
                           )
@@ -137,19 +243,19 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                             : Container(
                                 width: 150,
                                 height: 150,
-                                color: Colors.grey.shade800,
-                                child: const Icon(Icons.music_note, size: 60, color: Colors.white),
+                                color: AppColors.deepSpaceBlackLighter,
+                                child: Icon(Icons.music_note, size: 60, color: AppColors.textPrimary),
                               ),
                       ),
                     ),
                     const SizedBox(height: 16),
                     Text(
                       widget.playlistTitle,
-                      style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: AppColors.textPrimary, fontSize: 24, fontWeight: FontWeight.bold),
                     ),
                     Text(
                       '${_songs.length} songs',
-                      style: const TextStyle(color: Colors.white60, fontSize: 13),
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
                     ),
                   ],
                 ),
@@ -163,16 +269,16 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
               child: Row(
                 children: [
-                  const Icon(Icons.favorite_border, color: Colors.white, size: 28),
+                  Icon(Icons.favorite_border, color: AppColors.textPrimary, size: 28),
                   const SizedBox(width: 24),
-                  const Icon(Icons.more_vert, color: Colors.grey, size: 28),
+                  Icon(Icons.more_vert, color: AppColors.textSecondary, size: 28),
                   const Spacer(),
 
                   // ── Shuffle button (active = green) ──────────────────────
                   IconButton(
                     icon: Icon(
                       Icons.shuffle,
-                      color: _isShuffleOn ? Colors.green : Colors.white54,
+                      color: _isShuffleOn ? AppColors.neonPink : AppColors.divider,
                       size: 28,
                     ),
                     onPressed: _toggleShuffle,
@@ -184,11 +290,11 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                   GestureDetector(
                     onTap: () => _onPlayPauseTap(isThisPlaylistPlaying),
                     child: CircleAvatar(
-                      backgroundColor: Colors.green,
+                      backgroundColor: AppColors.neonPink,
                       radius: 28,
                       child: Icon(
                         isThisPlaylistPlaying ? Icons.pause : Icons.play_arrow,
-                        color: Colors.black,
+                        color: AppColors.deepSpaceBlack,
                         size: 32,
                       ),
                     ),
@@ -204,6 +310,17 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
           SliverList(
             delegate: SliverChildBuilderDelegate(
               (context, index) {
+                if (index == _songs.length && _hasMoreResults && widget.playlistId != null) {
+                  return Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24.0),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: AppColors.neonPink,
+                        strokeWidth: 2.5,
+                      ),
+                    ),
+                  );
+                }
                 if (index >= _songs.length) return null;
                 final song = _songs[index];
                 final isCurrentlyPlaying = currentSong?.id == song.id && isPlaying;
@@ -219,9 +336,9 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                           borderRadius: BorderRadius.circular(4),
                           child: song.albumArt != null
                               ? Image.network(song.albumArt!, width: 48, height: 48, fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(width: 48, height: 48, color: Colors.grey.shade800))
-                              : Container(width: 48, height: 48, color: Colors.grey.shade800,
-                                  child: const Icon(Icons.music_note, color: Colors.white54)),
+                                  errorBuilder: (_, __, ___) => Container(width: 48, height: 48, color: AppColors.deepSpaceBlackLighter))
+                              : Container(width: 48, height: 48, color: AppColors.deepSpaceBlackLighter,
+                                  child: Icon(Icons.music_note, color: AppColors.textSecondary)),
                         ),
                         const SizedBox(width: 12),
                         // Title + artist
@@ -232,7 +349,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                               Text(
                                 song.title,
                                 style: TextStyle(
-                                  color: isCurrentlyPlaying ? Colors.green : Colors.white,
+                                  color: isCurrentlyPlaying ? AppColors.neonPink : AppColors.textPrimary,
                                   fontSize: 16,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -241,7 +358,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(song.artist,
-                                  style: const TextStyle(color: Colors.grey, fontSize: 13),
+                                  style: TextStyle(color: AppColors.textSecondary, fontSize: 13),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis),
                             ],
@@ -255,7 +372,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                           ),
                         // Options
                         IconButton(
-                          icon: const Icon(Icons.more_vert, color: Colors.grey),
+                          icon: Icon(Icons.more_vert, color: AppColors.textSecondary),
                           onPressed: () => _showSongOptions(context, song),
                         ),
                       ],
@@ -263,7 +380,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                   ),
                 );
               },
-              childCount: _songs.length,
+              childCount: _songs.length + (_hasMoreResults && widget.playlistId != null ? 1 : 0),
             ),
           ),
 
@@ -343,7 +460,7 @@ class _MiniEqualizerState extends State<_MiniEqualizer>
         width: 3,
         height: height,
         decoration: BoxDecoration(
-          color: Colors.green,
+          color: AppColors.neonPink,
           borderRadius: BorderRadius.circular(2),
         ),
       );

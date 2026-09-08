@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import '../../domain/entities/song.dart';
+import '../../data/services/cloud_sync_service.dart';
 
 const _playlistsBoxKey = 'userPlaylists';
 const favoritesId = 'favorites_playlist_id';
@@ -103,6 +104,7 @@ class PlaylistNotifier extends StateNotifier<List<Playlist>> {
     final box = await Hive.openBox<String>(_playlistsBoxKey);
     await box.put(newPlaylist.id, jsonEncode(newPlaylist.toJson()));
     state = [...state, newPlaylist];
+    CloudSyncService().backupData();
     return newPlaylist.id;
   }
 
@@ -110,6 +112,7 @@ class PlaylistNotifier extends StateNotifier<List<Playlist>> {
     final box = await Hive.openBox<String>(_playlistsBoxKey);
     await box.delete(id);
     state = state.where((p) => p.id != id).toList();
+    CloudSyncService().backupData();
   }
 
   Future<void> addSongToPlaylist(String playlistId, Song song) async {
@@ -132,6 +135,7 @@ class PlaylistNotifier extends StateNotifier<List<Playlist>> {
     final newState = [...state];
     newState[playlistIdx] = updatedPlaylist;
     state = newState;
+    CloudSyncService().backupData();
   }
 
   Future<void> removeSongFromPlaylist(String playlistId, String songId) async {
@@ -148,6 +152,7 @@ class PlaylistNotifier extends StateNotifier<List<Playlist>> {
     final newState = [...state];
     newState[playlistIdx] = updatedPlaylist;
     state = newState;
+    CloudSyncService().backupData();
   }
 
   bool isFavorite(String songId) {

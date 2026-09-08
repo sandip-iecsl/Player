@@ -1,5 +1,4 @@
 import 'dart:math';
-import 'dart:ui' as ui;
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -232,13 +231,15 @@ class _VisualizerScreenState extends ConsumerState<VisualizerScreen>
 
                 // ── Visualizer ─────────────────────────────────────────
                 Positioned.fill(
-                  child: CustomPaint(
-                    painter: EnhancedVisualizerPainter(
-                      heights: _currentHeights,
-                      animationValue: _controller.value,
-                      primaryColor: _currentColor,
-                      style: settings.style,
-                      pulse: _pulse,
+                  child: RepaintBoundary(
+                    child: CustomPaint(
+                      painter: EnhancedVisualizerPainter(
+                        heights: _currentHeights,
+                        animationValue: _controller.value,
+                        primaryColor: _currentColor,
+                        style: settings.style,
+                        pulse: _pulse,
+                      ),
                     ),
                   ),
                 ),

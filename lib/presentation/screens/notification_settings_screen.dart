@@ -73,14 +73,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
               value: settings.enableBeatResponse,
               onChanged: (_) => settingsNotifier.toggleBeatResponse(),
             ),
-            
-            // Always-on Display Toggle
-            _buildSettingTile(
-              title: 'Always-on Display',
-              subtitle: 'Show controls on lock screen and AOD',
-              value: settings.enableAlwaysOnDisplay,
-              onChanged: (_) => settingsNotifier.toggleAlwaysOnDisplay(),
-            ),
+
             
             // Animations Toggle
             _buildSettingTile(
@@ -212,7 +205,7 @@ class NotificationSettingsScreen extends ConsumerWidget {
       trailing: Switch(
         value: value,
         onChanged: onChanged,
-        activeColor: const Color(0xFF1DB954),
+        activeThumbColor: const Color(0xFF1DB954),
       ),
       contentPadding: EdgeInsets.zero,
     );

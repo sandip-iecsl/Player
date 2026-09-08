@@ -24,12 +24,12 @@ class QueueManager {
   // Playback context
   PlaybackContext _context = PlaybackContext.none;
   String? _contextId; // albumId or artistId
+  String _artistMarket = 'IN'; // market code for artist radio
   bool _isShuffled = false;
   RepeatMode _repeatMode = RepeatMode.off;
 
   // Artist context specific
   bool _hasTransitionedToRadio = false;
-  String? _artistMarket;
 
   // Stream controllers
   final _queueController = StreamController<List<Song>>.broadcast();

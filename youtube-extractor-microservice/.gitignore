@@ -1,0 +1,7 @@
+node_modules/
+.env
+.env.local
+yt-dlp.exe
+yt-dlp
+*.log
+.DS_Store

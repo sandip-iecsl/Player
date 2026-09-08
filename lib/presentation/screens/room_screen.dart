@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/sync_provider.dart';
 import '../providers/audio_provider.dart';
+import '../../core/constants/app_colors.dart';
+
+import '../providers/theme_provider.dart';
 
 class RoomScreen extends ConsumerStatefulWidget {
   const RoomScreen({super.key});
@@ -26,19 +29,19 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        backgroundColor: const Color(0xFF1E1E1E),
+        backgroundColor: AppColors.deepSpaceBlackLight,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text(isHosting ? 'Set Room Password' : 'Enter Room Password',
-            style: const TextStyle(color: Colors.white)),
+            style: TextStyle(color: AppColors.textPrimary)),
         content: TextField(
           controller: _passwordController,
           obscureText: true,
-          style: const TextStyle(color: Colors.white),
+          style: TextStyle(color: AppColors.textPrimary),
           decoration: InputDecoration(
             hintText: 'Password',
-            hintStyle: const TextStyle(color: Colors.grey),
+            hintStyle: TextStyle(color: AppColors.textSecondary),
             filled: true,
-            fillColor: Colors.white10,
+            fillColor: AppColors.deepSpaceBlackLighter,
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none),
@@ -48,10 +51,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           TextButton(
               onPressed: () => Navigator.pop(ctx),
               child:
-                  const Text('Cancel', style: TextStyle(color: Colors.grey))),
+                  Text('Cancel', style: TextStyle(color: AppColors.textSecondary))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1DB954)),
+                backgroundColor: AppColors.neonPink),
             onPressed: () {
               final pass = _passwordController.text.trim();
               if (pass.isNotEmpty) {
@@ -64,8 +67,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               }
             },
             child: Text(isHosting ? 'START' : 'JOIN',
-                style: const TextStyle(
-                    color: Colors.black, fontWeight: FontWeight.bold)),
+                style: TextStyle(
+                    color: AppColors.deepSpaceBlack, fontWeight: FontWeight.bold)),
           ),
         ],
       ),
@@ -77,7 +80,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
     showModalBottomSheet(
       context: context,
-      backgroundColor: const Color(0xFF1E1E1E),
+      backgroundColor: AppColors.deepSpaceBlackLight,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) {
@@ -90,25 +93,25 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Nearby Aura Rooms',
+                  Text('Nearby Aura Rooms',
                       style: TextStyle(
-                          color: Colors.white,
+                          color: AppColors.textPrimary,
                           fontSize: 20,
                           fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
-                  const Text('Connecting via Nearby Connections...',
-                      style: TextStyle(color: Colors.grey, fontSize: 13)),
+                  Text('Connecting via Nearby Connections...',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                   const SizedBox(height: 16),
                   if (syncState.discoveredEndpoints.isEmpty)
-                    const Expanded(
+                    Expanded(
                         child: Center(
                             child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        CircularProgressIndicator(color: Color(0xFF1DB954)),
+                        CircularProgressIndicator(color: AppColors.neonPink),
                         SizedBox(height: 16),
                         Text('Searching for friends...',
-                            style: TextStyle(color: Colors.grey)),
+                            style: TextStyle(color: AppColors.textSecondary)),
                       ],
                     )))
                   else
@@ -118,16 +121,16 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                         itemBuilder: (context, index) {
                           final endpoint = syncState.discoveredEndpoints[index];
                           return ListTile(
-                            leading: const CircleAvatar(
-                              backgroundColor: Color(0xFF1DB954),
-                              child: Icon(Icons.person, color: Colors.black),
+                            leading: CircleAvatar(
+                              backgroundColor: AppColors.neonPink,
+                              child: Icon(Icons.person, color: AppColors.deepSpaceBlack),
                             ),
                             title: Text(endpoint.name,
-                                style: const TextStyle(
-                                    color: Colors.white,
+                                style: TextStyle(
+                                    color: AppColors.textPrimary,
                                     fontWeight: FontWeight.bold)),
-                            subtitle: const Text('Tap to join',
-                                style: TextStyle(color: Colors.white54)),
+                            subtitle: Text('Tap to join',
+                                style: TextStyle(color: AppColors.textSecondary)),
                             onTap: () {
                               Navigator.pop(ctx);
                               _showPasswordDialog(
@@ -148,23 +151,25 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.watch(themeModeProvider);
+    ref.watch(themeColorProvider);
     final syncState = ref.watch(syncProvider);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: AppColors.deepSpaceBlack,
       appBar: AppBar(
-        backgroundColor: Colors.black,
+        backgroundColor: AppColors.deepSpaceBlack,
         elevation: 0,
-        title: const Text('Room',
+        title: Text('Room',
             style: TextStyle(
-                color: Colors.white,
+                color: AppColors.textPrimary,
                 fontSize: 24,
                 fontWeight: FontWeight.bold)),
         actions: [
           if (syncState.isActive)
             IconButton(
               onPressed: () => ref.read(syncProvider.notifier).stopSync(),
-              icon: const Icon(Icons.logout_rounded, color: Colors.redAccent),
+              icon: Icon(Icons.logout_rounded, color: AppColors.neonCoral),
               tooltip: 'Leave Room',
             ),
         ],
@@ -181,23 +186,23 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          const Icon(Icons.speaker_group_outlined,
-              size: 80, color: Color(0xFF1DB954)),
+          Icon(Icons.speaker_group_outlined,
+              size: 80, color: AppColors.neonPink),
           const SizedBox(height: 24),
-          const Text(
+          Text(
             'Listen Together',
             style: TextStyle(
-                color: Colors.white, fontSize: 28, fontWeight: FontWeight.bold),
+                color: AppColors.textPrimary, fontSize: 28, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             'Sync your music with friends in real-time.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey, fontSize: 16),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 16),
           ),
           const SizedBox(height: 48),
           if (err != null) ...[
-            Text(err, style: const TextStyle(color: Colors.redAccent)),
+            Text(err, style: TextStyle(color: AppColors.neonCoral)),
             const SizedBox(height: 16),
           ],
           SizedBox(
@@ -205,15 +210,15 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             height: 54,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF1DB954),
+                backgroundColor: AppColors.neonPink,
                 padding: const EdgeInsets.symmetric(vertical: 18),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30)),
               ),
               onPressed: () => _showPasswordDialog(isHosting: true),
-              child: const Text('START A ROOM',
+              child: Text('START A ROOM',
                   style: TextStyle(
-                      color: Colors.black,
+                      color: AppColors.deepSpaceBlack,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2)),
@@ -225,14 +230,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             height: 54,
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(
-                side: const BorderSide(color: Colors.white54, width: 2),
+                side: BorderSide(color: AppColors.divider, width: 2),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(30)),
               ),
               onPressed: _showNearbyRoomsSheet,
-              child: const Text('FIND NEARBY ROOMS',
+              child: Text('FIND NEARBY ROOMS',
                   style: TextStyle(
-                      color: Colors.white,
+                      color: AppColors.textPrimary,
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
                       letterSpacing: 1.2)),
@@ -259,10 +264,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               margin: const EdgeInsets.only(bottom: 20),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: const Color(0xFF1DB954).withOpacity(0.1),
+                color: AppColors.neonPink.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(16),
                 border:
-                    Border.all(color: const Color(0xFF1DB954).withOpacity(0.3)),
+                    Border.all(color: AppColors.neonPink.withOpacity(0.3)),
               ),
               child: Row(
                 children: [
@@ -278,17 +283,17 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                             errorBuilder: (_, __, ___) => Container(
                               width: 48,
                               height: 48,
-                              color: Colors.grey[800],
-                              child: const Icon(Icons.music_note,
-                                  color: Colors.white54, size: 24),
+                              color: AppColors.deepSpaceBlackLighter,
+                              child: Icon(Icons.music_note,
+                                  color: AppColors.textSecondary, size: 24),
                             ),
                           )
                         : Container(
                             width: 48,
                             height: 48,
-                            color: Colors.grey[800],
-                            child: const Icon(Icons.music_note,
-                                color: Colors.white54, size: 24),
+                            color: AppColors.deepSpaceBlackLighter,
+                            child: Icon(Icons.music_note,
+                                color: AppColors.textSecondary, size: 24),
                           ),
                   ),
                   const SizedBox(width: 12),
@@ -297,10 +302,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
+                        Text(
                           'NOW PLAYING',
                           style: TextStyle(
-                            color: Color(0xFF1DB954),
+                            color: AppColors.neonPink,
                             fontSize: 10,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 1,
@@ -311,8 +316,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                           currentSong.title,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
                           ),
@@ -321,8 +326,8 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                           currentSong.artist,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white70,
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
                             fontSize: 14,
                           ),
                         ),
@@ -334,12 +339,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1DB954).withOpacity(0.2),
+                        color: AppColors.neonPink.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.sync,
-                        color: Color(0xFF1DB954),
+                        color: AppColors.neonPink,
                         size: 20,
                       ),
                     )
@@ -347,12 +352,12 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
+                        color: AppColors.deepSpaceBlackLighter,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: const Icon(
+                      child: Icon(
                         Icons.speaker_group,
-                        color: Colors.white,
+                        color: AppColors.textPrimary,
                         size: 20,
                       ),
                     ),
@@ -364,40 +369,40 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.1),
+                color: AppColors.deepSpaceBlackLighter,
                 borderRadius: BorderRadius.circular(12),
                 border:
-                    Border.all(color: const Color(0xFF1DB954).withOpacity(0.5)),
+                    Border.all(color: AppColors.neonPink.withOpacity(0.5)),
               ),
               child: Column(
                 children: [
-                  const Text('ROOM STATUS',
+                  Text('ROOM STATUS',
                       style: TextStyle(
-                          color: Colors.grey, fontSize: 10, letterSpacing: 2)),
+                          color: AppColors.textSecondary, fontSize: 10, letterSpacing: 2)),
                   const SizedBox(height: 4),
                   Text(
                     syncState.status == SyncStatus.hosting
                         ? 'HOSTING'
                         : 'JOINED',
-                    style: const TextStyle(
-                        color: Color(0xFF1DB954),
+                    style: TextStyle(
+                        color: AppColors.neonPink,
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 2),
                   ),
                   const SizedBox(height: 4),
                   if (syncState.isHost)
-                    const Text('Visible as Aura Room',
-                        style: TextStyle(color: Colors.white54, fontSize: 12)),
+                    Text('Visible as Aura Room',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                   if (syncState.isSyncing) ...[
                     const SizedBox(height: 12),
-                    const LinearProgressIndicator(
-                        color: Color(0xFF1DB954),
-                        backgroundColor: Colors.white10),
+                    LinearProgressIndicator(
+                        color: AppColors.neonPink,
+                        backgroundColor: AppColors.deepSpaceBlackLight),
                     const SizedBox(height: 4),
-                    const Text('SYNCHRONIZING...',
+                    Text('SYNCHRONIZING...',
                         style: TextStyle(
-                            color: Color(0xFF1DB954),
+                            color: AppColors.neonPink,
                             fontSize: 10,
                             fontWeight: FontWeight.bold)),
                   ],
@@ -407,10 +412,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
           ),
 
           const SizedBox(height: 40),
-          const Text(
+          Text(
             'Participants',
             style: TextStyle(
-                color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
           Expanded(
@@ -436,19 +441,19 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               margin: const EdgeInsets.only(bottom: 16),
               width: double.infinity,
               decoration: BoxDecoration(
-                  color: Colors.white10,
+                  color: AppColors.deepSpaceBlackLight,
                   borderRadius: BorderRadius.circular(8)),
-              child: const Row(
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   SizedBox(
                       width: 14,
                       height: 14,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Color(0xFF1DB954))),
+                          strokeWidth: 2, color: AppColors.neonPink)),
                   SizedBox(width: 12),
                   Text('Every device sounding at once soon...',
-                      style: TextStyle(color: Colors.white70, fontSize: 12)),
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                 ],
               ),
             ),
@@ -464,14 +469,14 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
       contentPadding: EdgeInsets.zero,
       leading: CircleAvatar(
         backgroundColor:
-            isHost ? const Color(0xFF1DB954) : Colors.grey.shade800,
-        child: Icon(Icons.person, color: isHost ? Colors.black : Colors.white),
+            isHost ? AppColors.neonPink : AppColors.deepSpaceBlackLighter,
+        child: Icon(Icons.person, color: isHost ? AppColors.deepSpaceBlack : AppColors.textPrimary),
       ),
       title: Row(
         children: [
           Text(name,
-              style: const TextStyle(
-                  color: Colors.white,
+              style: TextStyle(
+                  color: AppColors.textPrimary,
                   fontSize: 16,
                   fontWeight: FontWeight.w500)),
           if (isHost) ...[
@@ -479,13 +484,13 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFF1DB954).withOpacity(0.2),
+                color: AppColors.neonPink.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(4),
-                border: Border.all(color: const Color(0xFF1DB954)),
+                border: Border.all(color: AppColors.neonPink),
               ),
-              child: const Text('Host',
+              child: Text('Host',
                   style: TextStyle(
-                      color: Color(0xFF1DB954),
+                      color: AppColors.neonPink,
                       fontSize: 10,
                       fontWeight: FontWeight.bold)),
             ),
@@ -494,7 +499,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             Text(
               isReady ? 'READY' : 'BUFFERING...',
               style: TextStyle(
-                  color: isReady ? const Color(0xFF1DB954) : Colors.orange,
+                  color: isReady ? AppColors.neonPink : AppColors.neonCoral,
                   fontSize: 10,
                   fontWeight: FontWeight.bold),
             ),

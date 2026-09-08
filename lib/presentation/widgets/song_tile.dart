@@ -20,30 +20,33 @@ class SongTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isUnstreamable = song.previewUrl == null || song.previewUrl!.startsWith('unstreamable');
 
     return GestureDetector(
-      onTap: onTap,
+      onTap: isUnstreamable ? null : onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(16),
-          color: isPlaying
-              ? AppColors.neonPurple.withValues(alpha: 0.12)
-              : isDark
-                  ? AppColors.deepSpaceBlackLight.withValues(alpha: 0.6)
-                  : AppColors.cloudWhiteDark.withValues(alpha: 0.8),
+          color: isUnstreamable
+              ? (isDark ? AppColors.textSecondary.withValues(alpha: 0.1) : AppColors.textSecondary.withValues(alpha: 0.2))
+              : isPlaying
+                  ? AppColors.neonPink.withValues(alpha: 0.12)
+                  : isDark
+                      ? AppColors.deepSpaceBlackLight.withValues(alpha: 0.6)
+                      : AppColors.cloudWhiteDark.withValues(alpha: 0.8),
           border: Border.all(
             color: isPlaying
-                ? AppColors.neonPurple.withValues(alpha: 0.5)
+                ? AppColors.neonPink.withValues(alpha: 0.5)
                 : Colors.transparent,
             width: 1.5,
           ),
           boxShadow: isPlaying
               ? [
                   BoxShadow(
-                    color: AppColors.neonPurple.withValues(alpha: 0.2),
+                    color: AppColors.neonPink.withValues(alpha: 0.2),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   )
@@ -65,11 +68,11 @@ class SongTile extends ConsumerWidget {
                   Positioned.fill(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.45),
+                        color: AppColors.deepSpaceBlack.withValues(alpha: 0.45),
                         borderRadius: BorderRadius.circular(10),
                       ),
-                      child: const Icon(Icons.equalizer_rounded,
-                          color: AppColors.neonPurple, size: 22),
+                      child: Icon(Icons.equalizer_rounded,
+                          color: AppColors.neonPink, size: 22),
                     ),
                   ),
               ],
@@ -88,10 +91,10 @@ class SongTile extends ConsumerWidget {
                       fontWeight: FontWeight.w600,
                       fontSize: 14,
                       color: isPlaying
-                          ? AppColors.neonPurple
+                          ? AppColors.neonPink
                           : isDark
                               ? AppColors.textPrimary
-                              : Colors.black87,
+                              : AppColors.deepSpaceBlackLight,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -99,9 +102,10 @@ class SongTile extends ConsumerWidget {
                     song.artist,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12,
-                      color: AppColors.textSecondary,
+                      color: isUnstreamable ? AppColors.neonCoral : AppColors.textSecondary,
+                      fontStyle: isUnstreamable ? FontStyle.italic : FontStyle.normal,
                     ),
                   ),
                 ],
@@ -109,17 +113,22 @@ class SongTile extends ConsumerWidget {
             ),
             const SizedBox(width: 8),
             // Duration
-            Text(
-              _fmt(song.duration),
-              style:
-                  const TextStyle(fontSize: 11, color: AppColors.textSecondary),
-            ),
+            if (isUnstreamable)
+              Text(
+                'Searching...',
+                style: TextStyle(fontSize: 11, color: AppColors.neonCoral, fontWeight: FontWeight.bold),
+              )
+            else
+              Text(
+                _fmt(song.duration),
+                style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+              ),
             const SizedBox(width: 4),
             // Action button (three dots)
             IconButton(
               icon: Icon(
                 Icons.more_vert,
-                color: isPlaying ? AppColors.neonPurple : AppColors.textSecondary,
+                color: isPlaying ? AppColors.neonPink : AppColors.textSecondary,
                 size: 20,
               ),
               onPressed: () => PlaylistDialogs.showSongOptions(context, ref, song),
