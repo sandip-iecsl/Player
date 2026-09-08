@@ -39,7 +39,7 @@ class YouTubeExtractorService {
   ));
 
   static const String cacheBoxName = 'yt_imports_cache';
-  String? _cachedWorkingEndpoint = 'http://localhost:3000';
+  String? _cachedWorkingEndpoint = 'https://player-wwrc.onrender.com';
   final Map<String, Future<YouTubeExtractionResult?>> _inFlightExtractions = {};
 
   /// Regex matching YouTube video URLs
@@ -76,7 +76,7 @@ class YouTubeExtractorService {
       list.add(envUrl.trim().replaceAll(RegExp(r'\/$'), ''));
     }
     list.addAll([
-      'https://aura-extractor.onrender.com', // Cloud Production URL (Render / Railway / Koyeb)
+      'https://player-wwrc.onrender.com',    // Live Cloud Production URL (Render)
       'http://localhost:3000',               // Local ADB fallback
       'http://127.0.0.1:3000',
       'http://10.0.2.2:3000',               // Android Emulator fallback
