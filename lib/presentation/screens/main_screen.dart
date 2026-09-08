@@ -19,6 +19,7 @@ import '../../data/services/permission_service.dart';
 import '../../data/services/local_chat_service.dart';
 import '../../data/services/user_registration_service.dart';
 import '../providers/theme_provider.dart';
+import '../../main.dart'; // for global navigatorKey
 
 class MainScreen extends ConsumerStatefulWidget {
   const MainScreen({super.key});
