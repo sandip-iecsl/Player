@@ -764,14 +764,17 @@ Aura Player utilizes Hive boxes for fast, encrypted on-device persistence:
 ### 1. Prerequisites
 - **Flutter SDK:** `>= 3.0.0 < 4.0.0`
 - **Dart SDK:** `>= 3.0.0`
-- **Android:** Min SDK `21`, Target SDK `34`
-- **iOS:** Target iOS `13.0+`
+- **Android Target:** Min SDK `21`, Target SDK `34` (Android APK Only)
+- **Node.js:** `>= 18.0.0` (for YouTube Extractor Microservice)
 - **Firebase Project:** Configured with Firebase Auth & Cloud Firestore (with a secondary database named `chat`).
 
 ### 2. Environment Setup
 Create a `.env` file in the project root:
 
 ```ini
+# Live YouTube Extractor Microservice (Deployed on Render)
+YOUTUBE_EXTRACTOR_API_URL=https://player-wwrc.onrender.com
+
 # Music API Configuration
 LASTFM_API_KEY=your_lastfm_api_key
 SPOTIFY_CLIENT_ID=your_spotify_client_id
@@ -790,14 +793,36 @@ flutter pub get
 # 2. Run code generation (for Freezed & Riverpod models)
 flutter pub run build_runner build --delete-conflicting-outputs
 
-# 3. Launch application
+# 3. Launch application on Android device / emulator
 flutter run
 ```
 
-### 4. Production Build Scripts
-- **Android APK:** `flutter build apk --release`
-- **Android App Bundle:** `flutter build appbundle --release`
-- **iOS:** `./build_ios.sh` or `./build_free_ios.sh`
+### 4. Production Android Build Commands
+- **Split ABI APKs (Recommended for smallest file size ~28-30MB):**
+  ```bash
+  flutter build apk --split-per-abi
+  ```
+  *Outputs:*
+  - `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk` (Modern 64-bit devices)
+  - `build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk` (Legacy 32-bit devices)
+  - `build/app/outputs/flutter-apk/app-x86_64-release.apk` (Emulators & tablets)
+
+- **Universal APK:**
+  ```bash
+  flutter build apk --release
+  ```
+
+- **Google Play App Bundle:**
+  ```bash
+  flutter build appbundle --release
+  ```
+
+### 5. Backend Extractor Microservice Load & Stress Testing
+```bash
+cd youtube-extractor-microservice
+npm install
+node test_live_backend.js
+```
 
 ---
 
