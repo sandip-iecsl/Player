@@ -192,7 +192,7 @@ class _VisualizerScreenState extends ConsumerState<VisualizerScreen>
 
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) {
+      onPopInvokedWithResult: (didPop, result) {
         if (!didPop) _goBack();
       },
       child: Scaffold(

@@ -345,6 +345,7 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
               panel: currentSong != null
                   ? FullPlayer(
                       currentSong: currentSong,
+                      isOpen: _isPanelOpen,
                       onClose: () async {
                         try {
                           if (_panelController.isAttached) {

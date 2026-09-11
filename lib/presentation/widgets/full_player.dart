@@ -28,11 +28,13 @@ import '../providers/theme_provider.dart';
 class FullPlayer extends ConsumerStatefulWidget {
   final Song currentSong;
   final VoidCallback onClose;
+  final bool isOpen;
 
   const FullPlayer({
     super.key,
     required this.currentSong,
     required this.onClose,
+    this.isOpen = true,
   });
 
   @override
@@ -125,15 +127,22 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
         min(currentPosition.inSeconds.toDouble(), actualMaxDuration);
     final safeValue = max(0.0, currentValue);
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness: themeMode == ThemeMode.light ? Brightness.dark : Brightness.light,
-        systemNavigationBarColor: Colors.transparent,
-      ),
-      child: Scaffold(
-        backgroundColor: _backgroundColor ?? AppColors.deepSpaceBlack,
-      body: Stack(
+    return PopScope(
+      canPop: !widget.isOpen,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop) {
+          widget.onClose();
+        }
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness: themeMode == ThemeMode.light ? Brightness.dark : Brightness.light,
+          systemNavigationBarColor: Colors.transparent,
+        ),
+        child: Scaffold(
+          backgroundColor: _backgroundColor ?? AppColors.deepSpaceBlack,
+        body: Stack(
         children: [
           Positioned.fill(
             child: RepaintBoundary(
@@ -995,6 +1004,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
       ],
     ),
     ),
+  ),
   );
   }
 
