@@ -40,11 +40,11 @@ function normalizeYouTubeUrl(inputUrl) {
       // Extract video ID from 'v' query or from RD suffix (RD_JL6JAf-HKw -> _JL6JAf-HKw)
       let videoId = urlObj.searchParams.get('v');
       if (!videoId) {
-        videoId = listParam.replace(/^RD/, '');
+        videoId = listParam.replace(/^(RDMM|RDCL|RD)/, '');
       }
       
-      // Reconstruct as a clean watch link with the Mix playlist parameter
-      return `https://www.youtube.com/watch?v=${videoId}&list=${listParam}`;
+      // Reconstruct as a clean watch link without list parameters to prevent drift
+      return `https://www.youtube.com/watch?v=${videoId}`;
     }
 
     // Check if standard playlist link has a direct video parameter
@@ -55,11 +55,14 @@ function normalizeYouTubeUrl(inputUrl) {
       }
     }
 
-    // Strip unnecessary tracking parameters (e.g., playnext, si, feature, pp, index)
+    // Strip unnecessary tracking and playlist parameters to prevent drift
+    urlObj.searchParams.delete('list');
     urlObj.searchParams.delete('playnext');
     urlObj.searchParams.delete('si');
     urlObj.searchParams.delete('feature');
     urlObj.searchParams.delete('pp');
+    urlObj.searchParams.delete('index');
+    urlObj.searchParams.delete('start_radio');
     
     return urlObj.toString();
   } catch (err) {
@@ -81,19 +84,25 @@ function cleanTrackTitle(rawTitle) {
     .trim();
 }
 
+const STRICT_VIDEO_ID_REGEX = /^[a-zA-Z0-9_\-]{11}$/;
+
 /**
- * Extract YouTube Video ID from any supported format
+ * Extract strict 11-character YouTube Video ID from any supported format
  */
 function extractVideoId(url) {
-  const normalized = normalizeYouTubeUrl(url);
-  const match1 = normalized.match(/(?:watch\?v=|youtu\.be\/|shorts\/|embed\/)([a-zA-Z0-9_\-]{11})/);
-  if (match1 && match1[1]) return match1[1];
-  
-  const match2 = url.match(/(?:list=RD_?)([a-zA-Z0-9_\-]{11})/);
-  if (match2 && match2[1]) return match2[1];
+  if (!url) return null;
+  const trimmed = url.trim();
+  if (STRICT_VIDEO_ID_REGEX.test(trimmed)) return trimmed;
 
-  const match3 = url.match(/([a-zA-Z0-9_\-]{11})/);
-  if (match3 && match3[1]) return match3[1];
+  const normalized = normalizeYouTubeUrl(trimmed);
+  const match1 = normalized.match(/(?:watch\?v=|youtu\.be\/|shorts\/|embed\/|v\/)([a-zA-Z0-9_\-]{11})/);
+  if (match1 && match1[1] && STRICT_VIDEO_ID_REGEX.test(match1[1])) return match1[1];
+  
+  const match2 = url.match(/(?:list=(?:RDMM|RDCL|RD))([a-zA-Z0-9_\-]{11})/);
+  if (match2 && match2[1] && STRICT_VIDEO_ID_REGEX.test(match2[1])) return match2[1];
+
+  const match3 = url.match(/(?:v=)([a-zA-Z0-9_\-]{11})/);
+  if (match3 && match3[1] && STRICT_VIDEO_ID_REGEX.test(match3[1])) return match3[1];
   
   return null;
 }
@@ -145,12 +154,14 @@ app.post('/api/youtube/extract', async (req, res) => {
 
     console.log(`[Extractor] 🔍 Resolving multi-format audio streams with yt-dlp for: ${targetUrl} (ID: ${videoId})`);
 
-    // yt-dlp dump-single-json to parse full format list
+    // yt-dlp dump-single-json to parse full format list without re-encoding
     const ytDlpArgs = [
       '--dump-single-json',
       '--no-warnings',
       '--no-playlist',
       '--no-check-certificates',
+      '-f', 'bestaudio/140/251/139/best',
+      '-q', '0',
       '--extractor-args', 'youtube:player_client=android,ios,web',
       '--',
       targetUrl
@@ -364,14 +375,16 @@ app.get('/api/youtube/download', async (req, res) => {
     const customTitle = req.query.title ? cleanTrackTitle(req.query.title) : `yt_${videoId}`;
 
     // Select a native audio stream. No -x/ffmpeg post-processing is used, so
-    // the source container and codec are streamed without re-encoding.
-    let formatFilter = 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio';
+    // the source container and codec are streamed without re-encoding or dynamic range compression.
+    let formatFilter = 'bestaudio/140/251/139';
     if (formatId && formatId !== 'undefined') {
       formatFilter = `${formatId}/${formatFilter}`;
     } else if (quality === 'Data Saver' || quality === 'Low') {
-      formatFilter = '249/139/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio';
+      formatFilter = '249/139/bestaudio';
     } else if (quality === 'Medium') {
-      formatFilter = '139/140/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio';
+      formatFilter = '139/140/bestaudio';
+    } else {
+      formatFilter = 'bestaudio/140/251/139';
     }
 
     const outputExtension = formatId === '249' || formatId === '251' ||
@@ -389,6 +402,7 @@ app.get('/api/youtube/download', async (req, res) => {
       '--extractor-args', 'youtube:player_client=android,ios,web',
       '-f', formatFilter,
       '--buffer-size', '16K',
+      '-q', '0',
       '--audio-quality', '0',
       '-o', '-',
       '--no-playlist',

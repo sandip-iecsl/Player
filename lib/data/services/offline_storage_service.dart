@@ -42,12 +42,14 @@ class OfflineStorageService {
       if (file.existsSync()) {
         return file.path;
       } else {
-        // Check if matching .m4a or .mp3 exists in directory
+        // Check if matching .m4a, .opus, .webm, or .mp3 exists in directory
         final appDir = file.parent;
-        final m4a = File('${appDir.path}/offline_$songId.m4a');
-        final mp3 = File('${appDir.path}/offline_$songId.mp3');
-        if (m4a.existsSync()) return m4a.path;
-        if (mp3.existsSync()) return mp3.path;
+        for (final ext in ['m4a', 'opus', 'webm', 'mp3', 'mp4']) {
+          final candidate = File('${appDir.path}/offline_$songId.$ext');
+          if (candidate.existsSync()) return candidate.path;
+          final candidateNoPrefix = File('${appDir.path}/$songId.$ext');
+          if (candidateNoPrefix.existsSync()) return candidateNoPrefix.path;
+        }
 
         // File is missing but DB has it, cleanup DB
         box.delete(songId);
@@ -107,10 +109,21 @@ class OfflineStorageService {
     try {
       final dir = await getApplicationDocumentsDirectory();
       final selectedExtension = selectedFormat?.format.toString().toLowerCase();
-      final isWebm = selectedExtension == 'webm' || selectedExtension == 'opus' || targetFormatId == '249' || targetFormatId == '251';
-      final ext = isYoutube
-          ? (isWebm ? 'webm' : 'm4a')
-          : 'mp3';
+      final isOpus = selectedExtension == 'opus' || targetFormatId == '251' || targetFormatId == '250';
+      final isWebm = selectedExtension == 'webm' || targetFormatId == '249';
+
+      final String ext;
+      if (isYoutube) {
+        if (isOpus) {
+          ext = 'opus';
+        } else if (isWebm) {
+          ext = 'webm';
+        } else {
+          ext = 'm4a'; // Lossless native AAC container (140)
+        }
+      } else {
+        ext = selectedExtension ?? 'mp3';
+      }
       final audioPath = '${dir.path}/offline_${song.id}.$ext';
       
       debugPrint('[Offline] ⬇️ Downloading "${song.title}" ($targetBitrate) to $audioPath from $primaryDownloadUrl');

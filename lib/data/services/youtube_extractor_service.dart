@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -42,6 +43,8 @@ class YouTubeExtractorService {
   String? _cachedWorkingEndpoint = 'https://player-wwrc.onrender.com';
   final Map<String, Future<YouTubeExtractionResult?>> _inFlightExtractions = {};
 
+  static final RegExp _strictVideoIdRegex = RegExp(r'^[a-zA-Z0-9_\-]{11}$');
+
   /// Regex matching YouTube video URLs
   static final RegExp youtubeRegex = RegExp(
     r'^(https?:\/\/)?(www\.|music\.)?(youtube\.com\/(watch\?v=|shorts\/|v\/|embed\/|playlist\?)|youtu\.be\/)([a-zA-Z0-9_\-\?&=]+)$',
@@ -62,8 +65,8 @@ class YouTubeExtractorService {
       if (listParam != null && listParam.startsWith('RD')) {
         String? videoId = uri.queryParameters['v'];
         if (videoId == null || videoId.isEmpty) {
-          // Extract video ID embedded in list ID: RD_JL6JAf-HKw -> _JL6JAf-HKw
-          videoId = listParam.replaceFirst(RegExp(r'^RD'), '');
+          // Extract video ID embedded in list ID: RD_JL6JAf-HKw -> _JL6JAf-HKw, RDCLkA2bX4x18 -> CLkA2bX4x18
+          videoId = listParam.replaceFirst(RegExp(r'^(RDMM|RDCL|RD)'), '');
         }
         return 'https://www.youtube.com/watch?v=$videoId&list=$listParam';
       }
@@ -90,48 +93,121 @@ class YouTubeExtractorService {
   /// Returns a canonical watch URL only when the input contains an exact
   /// YouTube video ID. Playlist and search-like URLs are never guessed here.
   static String enforceStrictVideoUrl(String inputUrl) {
-    final trimmed = inputUrl.trim();
-    final uri = Uri.tryParse(trimmed.startsWith('http') ? trimmed : 'https://$trimmed');
-    if (uri == null) return trimmed;
-
-    String? videoId = uri.queryParameters['v'];
-    if (videoId == null && uri.host.toLowerCase().contains('youtu.be') && uri.pathSegments.isNotEmpty) {
-      videoId = uri.pathSegments.first;
-    }
-    if (videoId == null) {
-      final shortsIndex = uri.pathSegments.indexOf('shorts');
-      if (shortsIndex >= 0 && shortsIndex + 1 < uri.pathSegments.length) {
-        videoId = uri.pathSegments[shortsIndex + 1];
-      }
-    }
-
-    if (videoId != null && RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(videoId)) {
+    final videoId = extractVideoId(inputUrl);
+    if (videoId != null && _strictVideoIdRegex.hasMatch(videoId)) {
       return 'https://www.youtube.com/watch?v=$videoId';
     }
-    return trimmed;
+    return inputUrl.trim();
   }
 
   /// Checks if a string is a valid YouTube URL
   static bool isYouTubeUrl(String input) {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return false;
+    if (extractVideoId(trimmed) != null) return true;
     if (youtubeRegex.hasMatch(trimmed)) return true;
     final sanitized = sanitizeYouTubeLink(trimmed);
     return youtubeRegex.hasMatch(sanitized);
   }
 
-  /// Extracts the 11-character video ID from a YouTube URL
+  /// Extracts the strict 11-character video ID from any YouTube URL (watch, youtu.be, shorts, embed, mix)
   static String? extractVideoId(String input) {
-    final sanitized = sanitizeYouTubeLink(input);
-    final match = RegExp(r'(?:watch\?v=|youtu\.be\/|shorts\/|embed\/)([a-zA-Z0-9_\-]{11})').firstMatch(sanitized);
-    if (match != null && match.groupCount >= 1) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return null;
+
+    if (_strictVideoIdRegex.hasMatch(trimmed)) {
+      return trimmed;
+    }
+
+    final sanitized = sanitizeYouTubeLink(trimmed);
+    final uri = Uri.tryParse(sanitized.startsWith('http') ? sanitized : 'https://$sanitized');
+    if (uri != null) {
+      // 1. Check v= query parameter
+      final v = uri.queryParameters['v'];
+      if (v != null && _strictVideoIdRegex.hasMatch(v)) {
+        return v;
+      }
+
+      // 2. Check youtu.be/XXXXXXXXXXX
+      if (uri.host.toLowerCase().contains('youtu.be') && uri.pathSegments.isNotEmpty) {
+        final seg = uri.pathSegments.first;
+        if (_strictVideoIdRegex.hasMatch(seg)) {
+          return seg;
+        }
+      }
+
+      // 3. Check /shorts/XXXXXXXXXXX
+      final shortsIdx = uri.pathSegments.indexOf('shorts');
+      if (shortsIdx >= 0 && shortsIdx + 1 < uri.pathSegments.length) {
+        final seg = uri.pathSegments[shortsIdx + 1];
+        if (_strictVideoIdRegex.hasMatch(seg)) {
+          return seg;
+        }
+      }
+
+      // 4. Check /embed/XXXXXXXXXXX or /v/XXXXXXXXXXX
+      final embedIdx = uri.pathSegments.indexOf('embed');
+      if (embedIdx >= 0 && embedIdx + 1 < uri.pathSegments.length) {
+        final seg = uri.pathSegments[embedIdx + 1];
+        if (_strictVideoIdRegex.hasMatch(seg)) {
+          return seg;
+        }
+      }
+      final vIdx = uri.pathSegments.indexOf('v');
+      if (vIdx >= 0 && vIdx + 1 < uri.pathSegments.length) {
+        final seg = uri.pathSegments[vIdx + 1];
+        if (_strictVideoIdRegex.hasMatch(seg)) {
+          return seg;
+        }
+      }
+
+      // 5. Dynamic Mix RD list ID fallback (e.g. list=RD_JL6JAf-HKw)
+      final listParam = uri.queryParameters['list'];
+      if (listParam != null && listParam.startsWith('RD')) {
+        final rdId = listParam.replaceFirst(RegExp(r'^(RDMM|RDCL|RD)'), '');
+        if (_strictVideoIdRegex.hasMatch(rdId)) {
+          return rdId;
+        }
+      }
+    }
+
+    // RegEx matchers fallback
+    final match = RegExp(r'(?:watch\?v=|youtu\.be\/|shorts\/|embed\/|\/v\/)([a-zA-Z0-9_\-]{11})').firstMatch(sanitized);
+    if (match != null && match.group(1) != null && _strictVideoIdRegex.hasMatch(match.group(1)!)) {
       return match.group(1);
     }
-    final rawMatch = youtubeRegex.firstMatch(sanitized);
-    if (rawMatch != null && rawMatch.groupCount >= 5) {
-      return rawMatch.group(5);
-    }
+
     return null;
+  }
+
+  /// Selects the optimal audio format tier based on Wi-Fi connectivity and stream bitrate
+  static Future<YouTubeAudioFormat> selectOptimalFormat(List<YouTubeAudioFormat> formats) async {
+    if (formats.isEmpty) {
+      return const YouTubeAudioFormat(
+        quality: 'High',
+        bitrate: '320 kbps',
+        format: 'm4a',
+        estimatedSizeMb: '8.5 MB',
+        streamUrl: '',
+        formatId: '140',
+      );
+    }
+
+    try {
+      final connectivity = await Connectivity().checkConnectivity();
+      final isWifi = connectivity.contains(ConnectivityResult.wifi) ||
+                     connectivity.contains(ConnectivityResult.ethernet);
+
+      if (isWifi) {
+        // High Quality tier: formatId 140 (AAC/m4a ~320k) or highest bitrate tier
+        return formats.firstWhere(
+          (f) => f.formatId == '140' || f.quality.toLowerCase() == 'high' || f.bitrate.contains('320'),
+          orElse: () => formats.first,
+        );
+      }
+    } catch (_) {}
+
+    return formats.first;
   }
 
   /// Candidate microservice endpoint URLs (Cloud Production URL + Local ADB fallbacks)
@@ -271,6 +347,8 @@ class YouTubeExtractorService {
               ? YouTubeAudioFormat.defaults(streamUrl: streamUrl, durationSec: duration.inSeconds)
               : <YouTubeAudioFormat>[];
 
+          final optimalFormat = await selectOptimalFormat(formats);
+
           final songModel = SongModel(
             id: 'yt_$videoId',
             title: cleanTitle.isNotEmpty ? cleanTitle : rawTitle,
@@ -278,26 +356,17 @@ class YouTubeExtractorService {
             album: 'YouTube Imports',
             albumArt: 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
             duration: duration,
-            previewUrl: streamUrl,
+            previewUrl: optimalFormat.streamUrl.isNotEmpty ? optimalFormat.streamUrl : streamUrl,
             youtubeUrl: trimmedUrl,
             isYoutubeImport: true,
-            bitrate: formats.isNotEmpty ? formats.first.bitrate : '320 kbps',
-            formatId: formats.isNotEmpty ? formats.first.formatId : '140',
+            bitrate: optimalFormat.bitrate,
+            formatId: optimalFormat.formatId,
           );
 
           final result = YouTubeExtractionResult(
             song: songModel,
             availableFormats: formats,
-            selectedFormat: formats.isNotEmpty
-                ? formats.first
-                : YouTubeAudioFormat(
-                    quality: 'High',
-                    bitrate: '320 kbps',
-                    format: 'm4a',
-                    estimatedSizeMb: '8.5 MB',
-                    streamUrl: streamUrl ?? '',
-                    formatId: '140',
-                  ),
+            selectedFormat: optimalFormat,
           );
 
           if (streamUrl != null && streamUrl.isNotEmpty) {
@@ -381,7 +450,7 @@ class YouTubeExtractorService {
               ? formatsList
               : YouTubeAudioFormat.defaults(streamUrl: streamUrl, durationSec: durationSec);
 
-          final selectedFormat = finalFormats.first;
+          final selectedFormat = await selectOptimalFormat(finalFormats);
 
           final songModel = SongModel(
             id: map['id']?.toString() ?? 'yt_${videoId ?? DateTime.now().millisecondsSinceEpoch}',
@@ -406,7 +475,7 @@ class YouTubeExtractorService {
           _cachedWorkingEndpoint = endpoint;
           await _cacheResult(cacheKey, result);
 
-          debugPrint('[YouTubeExtractor] ✅ Successfully extracted via $endpoint: "${songModel.title}" (${finalFormats.length} formats)');
+          debugPrint('[YouTubeExtractor] ✅ Successfully extracted via $endpoint: "${songModel.title}" (${finalFormats.length} formats, Selected: ${selectedFormat.quality} / ${selectedFormat.bitrate})');
           return result;
         }
       }
@@ -438,10 +507,15 @@ class YouTubeExtractorService {
             ? formats
             : YouTubeAudioFormat.defaults(streamUrl: song.previewUrl ?? '', durationSec: song.duration.inSeconds);
 
+        final selected = finalFormats.firstWhere(
+          (f) => f.formatId == song.formatId || (song.formatId != null && f.formatId.contains(song.formatId!)),
+          orElse: () => finalFormats.first,
+        );
+
         return YouTubeExtractionResult(
           song: song,
           availableFormats: finalFormats,
-          selectedFormat: finalFormats.first,
+          selectedFormat: selected,
         );
       }
     } catch (e) {

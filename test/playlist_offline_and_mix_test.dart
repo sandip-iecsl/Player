@@ -41,6 +41,22 @@ void main() {
 
       const shortsUrl = 'https://www.youtube.com/shorts/3nQNiWdeH2Q';
       expect(YouTubeExtractorService.extractVideoId(shortsUrl), equals('3nQNiWdeH2Q'));
+
+      const embedUrl = 'https://www.youtube.com/embed/dQw4w9WgXcQ';
+      expect(YouTubeExtractorService.extractVideoId(embedUrl), equals('dQw4w9WgXcQ'));
+
+      const directId = 'fJ9rUzIMcZQ';
+      expect(YouTubeExtractorService.extractVideoId(directId), equals('fJ9rUzIMcZQ'));
+    });
+
+    test('enforceStrictVideoUrl produces clean canonical watch URLs without playlist drift', () {
+      const mixUrl = 'https://youtube.com/playlist?list=RD_JL6JAf-HKw&playnext=1';
+      final cleanUrl = YouTubeExtractorService.enforceStrictVideoUrl(mixUrl);
+      expect(cleanUrl, equals('https://www.youtube.com/watch?v=_JL6JAf-HKw'));
+
+      const shortsUrl = 'https://www.youtube.com/shorts/3nQNiWdeH2Q';
+      final cleanShorts = YouTubeExtractorService.enforceStrictVideoUrl(shortsUrl);
+      expect(cleanShorts, equals('https://www.youtube.com/watch?v=3nQNiWdeH2Q'));
     });
   });
 
