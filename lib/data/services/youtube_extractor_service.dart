@@ -87,6 +87,30 @@ class YouTubeExtractorService {
     }
   }
 
+  /// Returns a canonical watch URL only when the input contains an exact
+  /// YouTube video ID. Playlist and search-like URLs are never guessed here.
+  static String enforceStrictVideoUrl(String inputUrl) {
+    final trimmed = inputUrl.trim();
+    final uri = Uri.tryParse(trimmed.startsWith('http') ? trimmed : 'https://$trimmed');
+    if (uri == null) return trimmed;
+
+    String? videoId = uri.queryParameters['v'];
+    if (videoId == null && uri.host.toLowerCase().contains('youtu.be') && uri.pathSegments.isNotEmpty) {
+      videoId = uri.pathSegments.first;
+    }
+    if (videoId == null) {
+      final shortsIndex = uri.pathSegments.indexOf('shorts');
+      if (shortsIndex >= 0 && shortsIndex + 1 < uri.pathSegments.length) {
+        videoId = uri.pathSegments[shortsIndex + 1];
+      }
+    }
+
+    if (videoId != null && RegExp(r'^[a-zA-Z0-9_-]{11}$').hasMatch(videoId)) {
+      return 'https://www.youtube.com/watch?v=$videoId';
+    }
+    return trimmed;
+  }
+
   /// Checks if a string is a valid YouTube URL
   static bool isYouTubeUrl(String input) {
     final trimmed = input.trim();
@@ -141,7 +165,7 @@ class YouTubeExtractorService {
     bool forceRefresh = false,
   }) async {
     final trimmedUrl = url.trim();
-    final sanitizedUrl = sanitizeYouTubeLink(trimmedUrl);
+    final sanitizedUrl = enforceStrictVideoUrl(trimmedUrl);
     if (!isYouTubeUrl(trimmedUrl) && !isYouTubeUrl(sanitizedUrl)) {
       debugPrint('[YouTubeExtractor] ❌ Invalid YouTube URL: "$trimmedUrl"');
       return null;
@@ -299,7 +323,11 @@ class YouTubeExtractorService {
     final cleanTitle = Uri.encodeComponent(song.title);
     final baseUrl = _cachedWorkingEndpoint ?? _candidateEndpoints.first;
 
-    var url = '$baseUrl/api/youtube/download?id=$videoId&title=$cleanTitle';
+    final sourceUrl = enforceStrictVideoUrl(song.youtubeUrl ?? '');
+    final encodedSource = Uri.encodeQueryComponent(
+      sourceUrl.isNotEmpty ? sourceUrl : 'https://www.youtube.com/watch?v=$videoId',
+    );
+    var url = '$baseUrl/api/youtube/download?url=$encodedSource&title=$cleanTitle';
     if (formatId != null && formatId.isNotEmpty) {
       url += '&formatId=$formatId';
     }

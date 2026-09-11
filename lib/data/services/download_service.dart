@@ -119,7 +119,12 @@ class DownloadService {
         await auraDir.create(recursive: true);
       }
 
-      final ext = (song.isYoutubeImport || song.id.startsWith('yt_')) ? 'm4a' : 'mp3';
+      final isYoutube = song.isYoutubeImport || song.id.startsWith('yt_') || song.youtubeUrl != null;
+      final selectedExtension = selectedFormat?.format.toLowerCase();
+      final isWebm = selectedExtension == 'webm' || selectedExtension == 'opus' || targetFormatId == '249' || targetFormatId == '251';
+      final ext = isYoutube
+          ? (isWebm ? 'webm' : 'm4a')
+          : 'mp3';
       final fileName = '${_sanitizeFileName(song.title)}.$ext';
       final filePath = '${auraDir.path}/$fileName';
 

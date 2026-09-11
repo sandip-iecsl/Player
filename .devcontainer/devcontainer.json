@@ -1,0 +1,21 @@
+{
+  "name": "Flutter & Node Dev Container",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/devcontainers-contrib/features/flutter:1": {},
+    "ghcr.io/devcontainers-contrib/features/android-sdk:1": {}
+  },
+  "containerEnv": {
+    "ANDROID_HOME": "/home/codespace/android-sdk",
+    "ANDROID_SDK_ROOT": "/home/codespace/android-sdk"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "Dart-Code.flutter",
+        "Dart-Code.dart-code"
+      ]
+    }
+  },
+  "postCreateCommand": "flutter doctor"
+}

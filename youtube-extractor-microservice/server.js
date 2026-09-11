@@ -350,37 +350,62 @@ app.get('/api/youtube/download', async (req, res) => {
     }
 
     const videoId = extractVideoId(cleanUrl) || extractVideoId(trimmedUrl) || 'audio_track';
-    const targetUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const targetUrl = videoId !== 'audio_track'
+      ? `https://www.youtube.com/watch?v=${videoId}`
+      : cleanUrl;
     const customTitle = req.query.title ? cleanTrackTitle(req.query.title) : `yt_${videoId}`;
-    const sanitizedFileName = encodeURIComponent(`${customTitle}.m4a`);
 
-    // Determine target format string
-    let formatFilter = 'bestaudio[ext=m4a]/bestaudio/best';
+    // Select a native audio stream. No -x/ffmpeg post-processing is used, so
+    // the source container and codec are streamed without re-encoding.
+    let formatFilter = 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio';
     if (formatId && formatId !== 'undefined') {
-      formatFilter = `${formatId}/bestaudio[ext=m4a]/bestaudio/best`;
+      formatFilter = `${formatId}/${formatFilter}`;
     } else if (quality === 'Data Saver' || quality === 'Low') {
-      formatFilter = '249/worst[acodec!=none]/bestaudio[ext=m4a]/best';
+      formatFilter = '249/139/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio';
     } else if (quality === 'Medium') {
-      formatFilter = '139/bestaudio[ext=m4a]/best';
+      formatFilter = '139/140/bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio';
     }
+
+    const outputExtension = formatId === '249' || formatId === '251' ||
+      (!formatId && (quality === 'Data Saver' || quality === 'Low')) ? 'webm' : 'm4a';
+    const sanitizedFileName = encodeURIComponent(`${customTitle}.${outputExtension}`);
 
     console.log(`[Downloader] ⬇️ Streaming audio (${formatFilter}) for: ${targetUrl} (File: ${sanitizedFileName})`);
 
     // Set streaming headers
-    res.setHeader('Content-Type', 'audio/mp4');
+    res.setHeader('Content-Type', outputExtension === 'webm' ? 'audio/webm' : 'audio/mp4');
     res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFileName}"; filename*=UTF-8''${sanitizedFileName}`);
     res.setHeader('Accept-Ranges', 'bytes');
 
     const ytDlpProcess = spawn(YTDLP_BIN, [
       '--extractor-args', 'youtube:player_client=android,ios,web',
       '-f', formatFilter,
+      '--audio-quality', '0',
       '-o', '-',
       '--no-playlist',
+      '--no-part',
       '--no-warnings',
       '--',
       targetUrl
     ]);
 
+    const failDownload = (message, details) => {
+      console.error(`[Downloader] ❌ ${message}${details ? `: ${details}` : ''}`);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Stream failed', details });
+      } else if (!res.writableEnded) {
+        res.destroy();
+      }
+    };
+
+    res.on('error', (err) => {
+      console.warn(`[Downloader] ⚠️ HTTP response stream error: ${err.message}`);
+      ytDlpProcess.kill('SIGTERM');
+    });
+
+    ytDlpProcess.stdout.on('error', (err) => {
+      failDownload('yt-dlp output stream error', err.message);
+    });
     ytDlpProcess.stdout.pipe(res);
 
     ytDlpProcess.stderr.on('data', (data) => {
@@ -388,9 +413,12 @@ app.get('/api/youtube/download', async (req, res) => {
     });
 
     ytDlpProcess.on('error', (err) => {
-      console.error(`[Downloader] ❌ yt-dlp spawn error: ${err.message}`);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Download stream failed', details: err.message });
+      failDownload('yt-dlp spawn error', err.message);
+    });
+
+    ytDlpProcess.on('close', (code, signal) => {
+      if (code !== 0 && !res.writableEnded) {
+        failDownload(`yt-dlp exited with code ${code}`, signal || undefined);
       }
     });
 

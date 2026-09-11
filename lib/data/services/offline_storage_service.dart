@@ -106,7 +106,11 @@ class OfflineStorageService {
 
     try {
       final dir = await getApplicationDocumentsDirectory();
-      final ext = isYoutube ? 'm4a' : 'mp3';
+      final selectedExtension = selectedFormat?.format.toString().toLowerCase();
+      final isWebm = selectedExtension == 'webm' || selectedExtension == 'opus' || targetFormatId == '249' || targetFormatId == '251';
+      final ext = isYoutube
+          ? (isWebm ? 'webm' : 'm4a')
+          : 'mp3';
       final audioPath = '${dir.path}/offline_${song.id}.$ext';
       
       debugPrint('[Offline] ⬇️ Downloading "${song.title}" ($targetBitrate) to $audioPath from $primaryDownloadUrl');

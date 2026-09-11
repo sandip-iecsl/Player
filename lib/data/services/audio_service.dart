@@ -962,8 +962,14 @@ class AudioServiceHandler extends BaseAudioHandler {
             print('[Audio] ℹ️ Play session changed before setUrl(), aborting');
             return;
           }
-          print('[Audio] ▶️ Using setUrl() with headers for: $audioUrl');
-          await _audioPlayer.setUrl(audioUrl, headers: cdnHeaders);
+          final sourceUri = Uri.tryParse(audioUrl);
+          if (sourceUri == null || !sourceUri.hasScheme || sourceUri.host.isEmpty) {
+            throw const FormatException('Invalid remote audio URL');
+          }
+          print('[Audio] ▶️ Using LockCachingAudioSource with headers for: $audioUrl');
+          await _audioPlayer.setAudioSource(
+            LockCachingAudioSource(sourceUri, headers: cdnHeaders),
+          );
           if (_playSessionId != currentSession) {
             print('[Audio] ℹ️ Play session changed, aborting playback');
             return;
@@ -1016,7 +1022,9 @@ class AudioServiceHandler extends BaseAudioHandler {
                 'Referer': 'https://www.jiosaavn.com/',
                 'Origin': 'https://www.jiosaavn.com',
               };
-              await _audioPlayer.setUrl(audioUrl, headers: cdnHeaders);
+              await _audioPlayer.setAudioSource(
+                LockCachingAudioSource(Uri.parse(audioUrl), headers: cdnHeaders),
+              );
               if (_playSessionId != currentSession) return;
               await _audioPlayer.play();
               _consecutiveFailures = 0;
@@ -1067,7 +1075,9 @@ class AudioServiceHandler extends BaseAudioHandler {
                   _queue[_currentIndex] = _queue[_currentIndex].copyWith(previewUrl: freshUrl);
                 }
 
-                await _audioPlayer.setUrl(freshUrl);
+                await _audioPlayer.setAudioSource(
+                  LockCachingAudioSource(Uri.parse(freshUrl)),
+                );
                 if (_playSessionId != currentSession) return;
                 await _audioPlayer.play();
                 _consecutiveFailures = 0;
