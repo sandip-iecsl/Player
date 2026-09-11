@@ -812,7 +812,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                                                       }
                                                       return SynchronizedLyricsWidget(
                                                         lyricsData: lyricsData,
-                                                        positionStream: ref.read(audioServiceProvider).positionStream,
+                                                        positionStream: ref.read(audioServiceProvider).uiPositionStream,
                                                       );
                                                     },
                                                     loading: () => Center(

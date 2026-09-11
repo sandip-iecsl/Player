@@ -69,6 +69,11 @@ class AudioServiceHandler extends BaseAudioHandler {
   StreamSubscription? _positionSub2;
   StreamSubscription? _playerDurSub;
   StreamSubscription? _processingStateSub;
+  StreamSubscription? _uiPositionSourceSub;
+  Timer? _uiPositionTimer;
+  Duration? _pendingUiPosition;
+  final _uiPositionController = StreamController<Duration>.broadcast();
+  final Map<String, String> _warmedStreamUrls = {};
 
   // Consecutive failure counter — resets on any successful play
   int _consecutiveFailures = 0;
@@ -244,6 +249,8 @@ class AudioServiceHandler extends BaseAudioHandler {
     _positionSub2?.cancel();
     _playerDurSub?.cancel();
     _processingStateSub?.cancel();
+    _uiPositionSourceSub?.cancel();
+    _uiPositionTimer?.cancel();
     _playbackEventSub = null;
     _positionSub1 = null;
     _positionSub2 = null;
@@ -424,6 +431,21 @@ class AudioServiceHandler extends BaseAudioHandler {
         }
         _onTrackEnded();
       }
+    });
+
+    // Position is native-clock data, but rebuilding the entire UI for every
+    // native tick is unnecessary. Publish at most 10 updates per second for
+    // widgets; lock-screen playbackState still receives every native update.
+    _uiPositionSourceSub = _audioPlayer.positionStream.listen((position) {
+      _pendingUiPosition = position;
+      if (_uiPositionTimer != null) return;
+      _uiPositionTimer = Timer(const Duration(milliseconds: 100), () {
+        _uiPositionTimer = null;
+        final pendingPosition = _pendingUiPosition;
+        if (pendingPosition != null && !_uiPositionController.isClosed) {
+          _uiPositionController.add(pendingPosition);
+        }
+      });
     });
 
     // Fallback for Android ExoPlayer quirk where it sometimes hangs at the end
@@ -652,6 +674,7 @@ class AudioServiceHandler extends BaseAudioHandler {
     print('[Audio] 📂 Queue loaded [${_context.name}] (contextId: $_contextId) '
         '${songs.length} tracks, starting at $_currentIndex (shuffle: ${_shuffleMode == AudioServiceShuffleMode.all})');
     await _playSong(_queue[_currentIndex]);
+    unawaited(_warmAdjacentStreams());
 
     // FLOW 1: Trigger recommendation engine to fetch similar tracks upfront
     if (_context == PlaybackContext.search) {
@@ -670,6 +693,25 @@ class AudioServiceHandler extends BaseAudioHandler {
     _queue.addAll(newSongs);
     _originalQueue.addAll(newSongs);
     print('[Audio] ➕ Appended ${newSongs.length} tracks dynamically to current queue. Total now: ${_queue.length}');
+  }
+
+  Future<void> _warmAdjacentStreams() async {
+    if (_queue.length < 2) return;
+    final indexes = <int>{_currentIndex - 1, _currentIndex + 1}
+        .where((index) => index >= 0 && index < _queue.length);
+    for (final index in indexes) {
+      final song = _queue[index];
+      final isYouTube = song.isYoutubeImport || song.id.startsWith('yt_') || song.youtubeUrl != null;
+      if (!isYouTube || _warmedStreamUrls.containsKey(song.id)) continue;
+      try {
+        final url = await _ytExtractor.getFreshStreamUrl(song);
+        if (url != null && url.isNotEmpty) {
+          _warmedStreamUrls[song.id] = url;
+        }
+      } catch (error) {
+        print('[Audio] ⚠️ Adjacent stream warmup failed for ${song.id}: $error');
+      }
+    }
   }
 
   /// Infers context from URL type when not explicitly given.
@@ -897,7 +939,8 @@ class AudioServiceHandler extends BaseAudioHandler {
         return;
       }
 
-      String? audioUrl = OfflineStorageService.getLocalPath(song.id) ?? song.previewUrl;
+        String? audioUrl = OfflineStorageService.getLocalPath(song.id) ??
+          _warmedStreamUrls[song.id] ?? song.previewUrl;
 
       // Dynamically fetch missing or unstreamable URL
       if ((audioUrl == null || audioUrl.isEmpty || audioUrl.startsWith('unstreamable')) && song.id.isNotEmpty) {
@@ -907,6 +950,7 @@ class AudioServiceHandler extends BaseAudioHandler {
             final ytFreshUrl = await _ytExtractor.getFreshStreamUrl(song);
             if (ytFreshUrl != null && ytFreshUrl.isNotEmpty) {
               audioUrl = ytFreshUrl;
+              _warmedStreamUrls[song.id] = ytFreshUrl;
               if (_currentIndex >= 0 && _currentIndex < _queue.length) {
                 _queue[_currentIndex] = _queue[_currentIndex].copyWith(previewUrl: ytFreshUrl);
               }
@@ -990,6 +1034,7 @@ class AudioServiceHandler extends BaseAudioHandler {
           print('[Audio] ℹ️ Invoking play()...');
           await _audioPlayer.play();
           _consecutiveFailures = 0; // ✅ Reset on successful play
+          unawaited(_warmAdjacentStreams());
           print('[Audio] ✅ Playback started successfully!');
           return;
         } catch (e) {
@@ -1666,6 +1711,7 @@ class AudioServiceHandler extends BaseAudioHandler {
 
   Song? get currentSong => _queue.isNotEmpty ? _queue[_currentIndex] : null;
   Stream<Duration> get positionStream => _audioPlayer.positionStream;
+  Stream<Duration> get uiPositionStream => _uiPositionController.stream;
   Stream<Duration?> get durationStream => _audioPlayer.durationStream;
   Stream<bool> get playingStream => _audioPlayer.playingStream;
 
@@ -1707,6 +1753,9 @@ class AudioServiceHandler extends BaseAudioHandler {
 
 
   void dispose() {
+    _uiPositionSourceSub?.cancel();
+    _uiPositionTimer?.cancel();
+    _uiPositionController.close();
     _currentSongController.close();
     _dio.close();
     _hybridSearch.dispose();

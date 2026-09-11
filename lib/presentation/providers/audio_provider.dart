@@ -18,7 +18,7 @@ final isPlayingProvider = StreamProvider<bool>((ref) {
 });
 
 final currentPositionProvider = StreamProvider<Duration>((ref) {
-  return ref.watch(audioServiceProvider).positionStream;
+  return ref.watch(audioServiceProvider).uiPositionStream;
 });
 
 final currentDurationProvider = StreamProvider<Duration?>((ref) {

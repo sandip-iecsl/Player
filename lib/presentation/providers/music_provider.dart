@@ -28,6 +28,7 @@ class MusicProvider with ChangeNotifier {
   StreamSubscription? _playerStateSubscription;
   StreamSubscription? _queueSubscription;
   StreamSubscription? _indexSubscription;
+  Duration _lastPositionNotification = Duration.zero;
 
   MusicProvider(this._musicService) {
     _initializeListeners();
@@ -66,6 +67,10 @@ class MusicProvider with ChangeNotifier {
     // Audio player listeners
     _positionSubscription = _audioPlayer.positionStream.listen((position) {
       _position = position;
+      if ((position - _lastPositionNotification).abs() < const Duration(milliseconds: 100)) {
+        return;
+      }
+      _lastPositionNotification = position;
       notifyListeners();
     });
 

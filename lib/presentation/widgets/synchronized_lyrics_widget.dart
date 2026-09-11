@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import '../../domain/entities/lyrics_data.dart';
 import '../../core/constants/app_colors.dart';
@@ -23,6 +24,7 @@ class _SynchronizedLyricsWidgetState extends State<SynchronizedLyricsWidget> {
   
   int _currentIndex = 0;
   bool _isUserScrolling = false;
+  StreamSubscription<Duration>? _positionSubscription;
 
   @override
   void initState() {
@@ -31,7 +33,7 @@ class _SynchronizedLyricsWidgetState extends State<SynchronizedLyricsWidget> {
   }
 
   void _listenToPosition() {
-    widget.positionStream.listen((position) {
+    _positionSubscription = widget.positionStream.listen((position) {
       if (!mounted || widget.lyricsData.lines == null) return;
       
       final lines = widget.lyricsData.lines!;
@@ -60,6 +62,12 @@ class _SynchronizedLyricsWidgetState extends State<SynchronizedLyricsWidget> {
         }
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _positionSubscription?.cancel();
+    super.dispose();
   }
 
   @override

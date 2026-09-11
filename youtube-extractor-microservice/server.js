@@ -6,6 +6,14 @@ const { spawn, execFile } = require('child_process');
 const axios = require('axios');
 require('dotenv').config();
 
+process.on('uncaughtException', (error) => {
+  console.error('[Process] Uncaught exception:', error);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[Process] Unhandled rejection:', reason);
+});
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -380,6 +388,7 @@ app.get('/api/youtube/download', async (req, res) => {
     const ytDlpProcess = spawn(YTDLP_BIN, [
       '--extractor-args', 'youtube:player_client=android,ios,web',
       '-f', formatFilter,
+      '--buffer-size', '16K',
       '--audio-quality', '0',
       '-o', '-',
       '--no-playlist',
