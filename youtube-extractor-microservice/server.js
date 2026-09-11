@@ -20,8 +20,8 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// YouTube URL Validation Pattern (supports watch, shorts, embed, youtu.be, music.youtube, and playlists/mixes)
-const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.|music\.)?(youtube\.com\/(watch\?v=|shorts\/|v\/|embed\/|playlist\?)|youtu\.be\/)([a-zA-Z0-9_\-\?&=]+)$/;
+// YouTube URL Validation Pattern (supports watch, shorts, embed, youtu.be, music.youtube, m.youtube, and playlists/mixes)
+const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.|music\.|m\.)?(youtube\.com\/(watch\?.*v=|shorts\/|live\/|v\/|embed\/|playlist\?)|youtu\.be\/)([a-zA-Z0-9_\-\?&=%#\.\+]+)$/i;
 
 // Path to bundled yt-dlp binary (Windows and Linux / Cloud Container)
 const LOCAL_YTDLP = path.join(__dirname, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
@@ -31,20 +31,22 @@ const YTDLP_BIN = fs.existsSync(LOCAL_YTDLP) ? LOCAL_YTDLP : 'yt-dlp';
 function normalizeYouTubeUrl(inputUrl) {
   try {
     const trimmed = inputUrl.trim();
+    const videoId = extractVideoId(trimmed);
+    if (videoId && STRICT_VIDEO_ID_REGEX.test(videoId)) {
+      return `https://www.youtube.com/watch?v=${videoId}`;
+    }
+
     const urlObj = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
     
     // Check if link contains a Mix / Radio playlist (list starts with 'RD')
     const listParam = urlObj.searchParams.get('list');
     
     if (listParam && listParam.startsWith('RD')) {
-      // Extract video ID from 'v' query or from RD suffix (RD_JL6JAf-HKw -> _JL6JAf-HKw)
-      let videoId = urlObj.searchParams.get('v');
-      if (!videoId) {
-        videoId = listParam.replace(/^(RDMM|RDCL|RD)/, '');
+      let mixId = urlObj.searchParams.get('v');
+      if (!mixId) {
+        mixId = listParam.replace(/^(RDMM|RDCL|RD)/, '');
       }
-      
-      // Reconstruct as a clean watch link without list parameters to prevent drift
-      return `https://www.youtube.com/watch?v=${videoId}`;
+      return `https://www.youtube.com/watch?v=${mixId}`;
     }
 
     // Check if standard playlist link has a direct video parameter

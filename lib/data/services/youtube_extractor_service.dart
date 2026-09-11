@@ -46,8 +46,9 @@ class YouTubeExtractorService {
   static final RegExp _strictVideoIdRegex = RegExp(r'^[a-zA-Z0-9_\-]{11}$');
 
   /// Regex matching YouTube video URLs
+  /// Permissive RegExp matching standard YouTube, YouTube Music, youtu.be, shorts, and embed URLs
   static final RegExp youtubeRegex = RegExp(
-    r'^(https?:\/\/)?(www\.|music\.)?(youtube\.com\/(watch\?v=|shorts\/|v\/|embed\/|playlist\?)|youtu\.be\/)([a-zA-Z0-9_\-\?&=]+)$',
+    r'^(https?:\/\/)?(www\.|music\.|m\.)?(youtube\.com\/(watch\?.*v=|shorts\/|live\/|v\/|embed\/|playlist\?)|youtu\.be\/)([a-zA-Z0-9_\-\?&=%#\.\+]+)$',
     caseSensitive: false,
   );
 
@@ -82,9 +83,13 @@ class YouTubeExtractorService {
         ..remove('si')
         ..remove('feature')
         ..remove('pp')
-        ..remove('index');
+        ..remove('index')
+        ..remove('start_radio');
 
-      return uri.replace(queryParameters: cleanQueryParams.isNotEmpty ? cleanQueryParams : null).toString();
+      if (cleanQueryParams.isEmpty) {
+        return uri.replace(query: '').toString();
+      }
+      return uri.replace(queryParameters: cleanQueryParams).toString();
     } catch (_) {
       return rawUrl.trim();
     }

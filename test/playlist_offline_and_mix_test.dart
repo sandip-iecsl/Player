@@ -57,6 +57,13 @@ void main() {
       const shortsUrl = 'https://www.youtube.com/shorts/3nQNiWdeH2Q';
       final cleanShorts = YouTubeExtractorService.enforceStrictVideoUrl(shortsUrl);
       expect(cleanShorts, equals('https://www.youtube.com/watch?v=3nQNiWdeH2Q'));
+
+      const userTargetUrl = 'https://youtu.be/OWYoMZ8Po6A?si=WqhyL6W38v0ivnPu';
+      expect(YouTubeExtractorService.isYouTubeUrl(userTargetUrl), isTrue);
+      expect(YouTubeExtractorService.extractVideoId(userTargetUrl), equals('OWYoMZ8Po6A'));
+      expect(YouTubeExtractorService.enforceStrictVideoUrl(userTargetUrl), equals('https://www.youtube.com/watch?v=OWYoMZ8Po6A'));
+      final sanitizedTarget = YouTubeExtractorService.sanitizeYouTubeLink(userTargetUrl);
+      expect(sanitizedTarget, isNot(contains('si=')));
     });
   });
 
