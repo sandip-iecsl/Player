@@ -45,11 +45,17 @@ class YouTubeAudioFormat {
     };
   }
 
+  /// Helper to estimate file size in MB given bitrate in kbps and duration in seconds
+  static String estimateSizeMb(double bitrateKbps, int durationSec) {
+    final mb = ((bitrateKbps * 1000 * durationSec) / (8 * 1024 * 1024)).toStringAsFixed(1);
+    return '$mb MB';
+  }
+
   /// Default predefined fallback tiers
   static List<YouTubeAudioFormat> defaults({required String streamUrl, int durationSec = 180}) {
-    final highMb = ((320 * 1000 * durationSec) / (8 * 1024 * 1024)).toStringAsFixed(1);
-    final medMb = ((128 * 1000 * durationSec) / (8 * 1024 * 1024)).toStringAsFixed(1);
-    final lowMb = ((64 * 1000 * durationSec) / (8 * 1024 * 1024)).toStringAsFixed(1);
+    final highMb = estimateSizeMb(320, durationSec);
+    final medMb = estimateSizeMb(128, durationSec);
+    final lowMb = estimateSizeMb(64, durationSec);
 
     return [
       YouTubeAudioFormat(

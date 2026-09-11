@@ -169,7 +169,7 @@ app.post('/api/youtube/extract', async (req, res) => {
       targetUrl
     ];
 
-    execFile(YTDLP_BIN, ytDlpArgs, { maxBuffer: 25 * 1024 * 1024, timeout: 14000 }, async (error, stdout, stderr) => {
+    execFile(YTDLP_BIN, ytDlpArgs, { maxBuffer: 100 * 1024 * 1024, timeout: 60000 }, async (error, stdout, stderr) => {
       if (!error && stdout) {
         try {
           const info = JSON.parse(stdout);

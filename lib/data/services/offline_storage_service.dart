@@ -10,8 +10,9 @@ import 'youtube_extractor_service.dart';
 class OfflineStorageService {
   static const int maxSongs = 50;
   static final _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 15),
-    receiveTimeout: const Duration(seconds: 60),
+    connectTimeout: const Duration(seconds: 45),
+    receiveTimeout: null, // No timeout during continuous download of 30-40 min audio files
+    sendTimeout: const Duration(seconds: 30),
     headers: {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     },

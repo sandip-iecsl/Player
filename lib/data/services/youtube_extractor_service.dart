@@ -31,11 +31,12 @@ class YouTubeExtractorService {
   YouTubeExtractorService._internal();
 
   final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 4),
-    receiveTimeout: const Duration(seconds: 10),
+    connectTimeout: const Duration(seconds: 40),
+    receiveTimeout: const Duration(seconds: 60),
     headers: {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     },
   ));
 
@@ -192,7 +193,7 @@ class YouTubeExtractorService {
         quality: 'High',
         bitrate: '320 kbps',
         format: 'm4a',
-        estimatedSizeMb: '8.5 MB',
+        estimatedSizeMb: '12.5 MB',
         streamUrl: '',
         formatId: '140',
       );
@@ -307,83 +308,170 @@ class YouTubeExtractorService {
       } catch (_) {}
     }
 
-    // 3. Fallback: Query YouTube oEmbed API + JioSaavn / Direct Stream search
+    // 3. Fallback Tier A: Query Decentralized Piped & Invidious Audio APIs
     if (videoId != null) {
-      debugPrint('[YouTubeExtractor] 🛡️ Falling back to YouTube oEmbed + audio resolution for video: $videoId');
-      try {
-        final oembedRes = await _dio.get(
-          'https://www.youtube.com/oembed',
-          queryParameters: {'url': 'https://www.youtube.com/watch?v=$videoId', 'format': 'json'},
-        );
-
-        if (oembedRes.statusCode == 200 && oembedRes.data != null) {
-          final data = oembedRes.data is String ? jsonDecode(oembedRes.data) : oembedRes.data;
-          final oembedMap = Map<String, dynamic>.from(data as Map);
-          final rawTitle = oembedMap['title']?.toString() ?? 'YouTube Audio';
-          final authorName = oembedMap['author_name']?.toString() ?? 'YouTube Channel';
-
-          final cleanTitle = rawTitle
-              .replaceAll(RegExp(r'\[.*?\]'), '')
-              .replaceAll(RegExp(r'\(.*?\)'), '')
-              .replaceAll(RegExp(r'\|.*$'), '')
-              .trim();
-
-          var searchQuery = cleanTitle.replaceAll(RegExp(r'\s*(mashup|mix|remix|edit|ft\.|feat\.).*$', caseSensitive: false), '').trim();
-          if (searchQuery.isEmpty) searchQuery = cleanTitle;
-
-          String? streamUrl;
-          try {
-            debugPrint('[YouTubeExtractor] 🔍 Searching JioSaavn fallback for: "$searchQuery"');
-            final searchResults = await DirectJioSaavnService().searchSongs(searchQuery, limit: 5);
-            if (searchResults.isNotEmpty) {
-              final matched = searchResults.firstWhere(
-                (s) => s.previewUrl != null && s.previewUrl!.isNotEmpty,
-                orElse: () => searchResults.first,
-              );
-              streamUrl = matched.previewUrl;
-              debugPrint('[YouTubeExtractor] 🎯 Found JioSaavn stream: $streamUrl');
-            }
-          } catch (searchErr) {
-            debugPrint('[YouTubeExtractor] ⚠️ JioSaavn fallback search error: $searchErr');
-          }
-
-          const duration = Duration(seconds: 210);
-          final formats = streamUrl != null
-              ? YouTubeAudioFormat.defaults(streamUrl: streamUrl, durationSec: duration.inSeconds)
-              : <YouTubeAudioFormat>[];
-
-          final optimalFormat = await selectOptimalFormat(formats);
-
-          final songModel = SongModel(
-            id: 'yt_$videoId',
-            title: cleanTitle.isNotEmpty ? cleanTitle : rawTitle,
-            artist: authorName,
-            album: 'YouTube Imports',
-            albumArt: 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
-            duration: duration,
-            previewUrl: optimalFormat.streamUrl.isNotEmpty ? optimalFormat.streamUrl : streamUrl,
-            youtubeUrl: trimmedUrl,
-            isYoutubeImport: true,
-            bitrate: optimalFormat.bitrate,
-            formatId: optimalFormat.formatId,
-          );
-
-          final result = YouTubeExtractionResult(
-            song: songModel,
-            availableFormats: formats,
-            selectedFormat: optimalFormat,
-          );
-
-          if (streamUrl != null && streamUrl.isNotEmpty) {
-            await _cacheResult(cacheKey, result);
-          }
-          return result;
-        }
-      } catch (fallbackErr) {
-        debugPrint('[YouTubeExtractor] ❌ Fallback oEmbed failed: $fallbackErr');
+      final pipedRes = await _tryPipedExtraction(videoId, trimmedUrl, cacheKey);
+      if (pipedRes != null) {
+        debugPrint('[YouTubeExtractor] ⚡ Resolved via Piped streaming fallback for: ${pipedRes.song.title}');
+        return pipedRes;
       }
     }
 
+    // 4. Fallback Tier B: YouTube oEmbed + Guaranteed Direct Proxy Stream
+    if (videoId != null) {
+      debugPrint('[YouTubeExtractor] 🛡️ Falling back to YouTube oEmbed + guaranteed direct stream proxy for video: $videoId');
+      try {
+        String cleanTitle = 'YouTube Track';
+        String authorName = 'YouTube Audio';
+        int durationSec = 2400; // 40 minutes default for long mixes
+
+        try {
+          final oembedRes = await _dio.get(
+            'https://www.youtube.com/oembed',
+            queryParameters: {'url': 'https://www.youtube.com/watch?v=$videoId', 'format': 'json'},
+            options: Options(receiveTimeout: const Duration(seconds: 8)),
+          );
+
+          if (oembedRes.statusCode == 200 && oembedRes.data != null) {
+            final data = oembedRes.data is String ? jsonDecode(oembedRes.data) : oembedRes.data;
+            final oembedMap = Map<String, dynamic>.from(data as Map);
+            final rawTitle = oembedMap['title']?.toString() ?? 'YouTube Audio';
+            authorName = oembedMap['author_name']?.toString() ?? 'YouTube Channel';
+
+            cleanTitle = rawTitle
+                .replaceAll(RegExp(r'\[.*?\]'), '')
+                .replaceAll(RegExp(r'\(.*?\)'), '')
+                .replaceAll(RegExp(r'\|.*$'), '')
+                .trim();
+            if (cleanTitle.isEmpty) cleanTitle = rawTitle;
+          }
+        } catch (oembedErr) {
+          debugPrint('[YouTubeExtractor] ⚠️ oEmbed fetch error: $oembedErr');
+        }
+
+        // Construct guaranteed streaming & download endpoint URL
+        final dummySong = Song(
+          id: 'yt_$videoId',
+          title: cleanTitle,
+          artist: authorName,
+          duration: Duration(seconds: durationSec),
+          previewUrl: null,
+          youtubeUrl: trimmedUrl,
+          isYoutubeImport: true,
+        );
+
+        final directStreamUrl = getDownloadUrl(dummySong, quality: 'High');
+        final formats = YouTubeAudioFormat.defaults(streamUrl: directStreamUrl, durationSec: durationSec);
+        final optimalFormat = await selectOptimalFormat(formats);
+
+        final songModel = SongModel(
+          id: 'yt_$videoId',
+          title: cleanTitle,
+          artist: authorName,
+          album: 'YouTube Imports',
+          albumArt: 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+          duration: Duration(seconds: durationSec),
+          previewUrl: optimalFormat.streamUrl.isNotEmpty ? optimalFormat.streamUrl : directStreamUrl,
+          youtubeUrl: trimmedUrl,
+          isYoutubeImport: true,
+          bitrate: optimalFormat.bitrate,
+          formatId: optimalFormat.formatId,
+        );
+
+        final result = YouTubeExtractionResult(
+          song: songModel,
+          availableFormats: formats,
+          selectedFormat: optimalFormat,
+        );
+
+        await _cacheResult(cacheKey, result);
+        return result;
+      } catch (fallbackErr) {
+        debugPrint('[YouTubeExtractor] ❌ Direct stream proxy fallback failed: $fallbackErr');
+      }
+    }
+
+    return null;
+  }
+
+  /// Attempts to extract audio streams from public Piped API instances
+  Future<YouTubeExtractionResult?> _tryPipedExtraction(
+    String videoId,
+    String trimmedUrl,
+    String cacheKey,
+  ) async {
+    final pipedInstances = [
+      'https://pipedapi.kavin.rocks',
+      'https://api.piped.private.coffee',
+      'https://pipedapi.leptons.xyz',
+    ];
+
+    for (final instance in pipedInstances) {
+      try {
+        final res = await _dio.get(
+          '$instance/streams/$videoId',
+          options: Options(
+            receiveTimeout: const Duration(seconds: 8),
+            connectTimeout: const Duration(seconds: 6),
+          ),
+        );
+
+        if (res.statusCode == 200 && res.data != null) {
+          final data = res.data is String ? jsonDecode(res.data) : res.data;
+          final title = data['title']?.toString() ?? 'YouTube Audio';
+          final uploader = data['uploader']?.toString() ?? 'YouTube Artist';
+          final durationSec = (data['duration'] as num?)?.toInt() ?? 2400;
+          final audioStreams = data['audioStreams'] as List?;
+
+          if (audioStreams != null && audioStreams.isNotEmpty) {
+            final formats = <YouTubeAudioFormat>[];
+            for (final st in audioStreams) {
+              final streamUrl = st['url']?.toString();
+              if (streamUrl != null && streamUrl.isNotEmpty) {
+                final abr = (st['bitrate'] as num?)?.toDouble() ?? 160000;
+                final bitrateStr = '${(abr / 1000).round()} kbps';
+                final formatStr = (st['format']?.toString() ?? 'm4a').toLowerCase().replaceAll('webm', 'opus');
+                final quality = abr >= 160000 ? 'High' : (abr >= 100000 ? 'Medium' : 'Data Saver');
+
+                formats.add(YouTubeAudioFormat(
+                  quality: quality,
+                  bitrate: bitrateStr,
+                  format: formatStr,
+                  estimatedSizeMb: YouTubeAudioFormat.estimateSizeMb(abr / 1000, durationSec),
+                  streamUrl: streamUrl,
+                  formatId: st['format']?.toString() ?? '140',
+                ));
+              }
+            }
+
+            if (formats.isNotEmpty) {
+              final optimalFormat = await selectOptimalFormat(formats);
+              final songModel = SongModel(
+                id: 'yt_$videoId',
+                title: title,
+                artist: uploader,
+                album: 'YouTube Imports',
+                albumArt: data['thumbnailUrl'] ?? 'https://i.ytimg.com/vi/$videoId/hqdefault.jpg',
+                duration: Duration(seconds: durationSec),
+                previewUrl: optimalFormat.streamUrl,
+                youtubeUrl: trimmedUrl,
+                isYoutubeImport: true,
+                bitrate: optimalFormat.bitrate,
+                formatId: optimalFormat.formatId,
+              );
+
+              final result = YouTubeExtractionResult(
+                song: songModel,
+                availableFormats: formats,
+                selectedFormat: optimalFormat,
+              );
+              await _cacheResult(cacheKey, result);
+              return result;
+            }
+          }
+        }
+      } catch (_) {}
+    }
     return null;
   }
 
