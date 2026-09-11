@@ -1359,19 +1359,65 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Bass Slider
+                      // Bass Slider & Presets
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('BASS GAIN', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                          Text('BASS BOOST', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                           Text('${(audioService.bassGain * 100).toInt()}%', style: TextStyle(color: AppColors.neonPink, fontSize: 12, fontWeight: FontWeight.bold)),
                         ],
                       ),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          for (final preset in [
+                            ('Flat', 0.0),
+                            ('Warm', 0.40),
+                            ('Deep', 0.70),
+                            ('Ultra', 1.0),
+                          ])
+                            GestureDetector(
+                              onTap: () {
+                                audioService.setBassGain(preset.$2);
+                                setStateLocal(() {});
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: (audioService.bassGain - preset.$2).abs() < 0.05
+                                      ? AppColors.neonPink.withValues(alpha: 0.25)
+                                      : AppColors.surface,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: (audioService.bassGain - preset.$2).abs() < 0.05
+                                        ? AppColors.neonPink
+                                        : AppColors.divider,
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Text(
+                                  preset.$1,
+                                  style: TextStyle(
+                                    color: (audioService.bassGain - preset.$2).abs() < 0.05
+                                        ? AppColors.neonPink
+                                        : AppColors.textSecondary,
+                                    fontSize: 11,
+                                    fontWeight: (audioService.bassGain - preset.$2).abs() < 0.05
+                                        ? FontWeight.bold
+                                        : FontWeight.normal,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
                       SliderTheme(
                         data: SliderThemeData(
-                          trackHeight: 2,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
                           activeTrackColor: audioService.bassGain > 0 ? AppColors.neonPink : AppColors.divider,
                           inactiveTrackColor: AppColors.divider,
                           thumbColor: audioService.bassGain > 0 ? AppColors.neonPink : AppColors.textSecondary,
@@ -1390,15 +1436,15 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Text('TREBLE GAIN', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
+                          Text('TREBLE CLARITY', style: TextStyle(color: AppColors.textSecondary, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1.2)),
                           Text('${(audioService.trebleGain * 100).toInt()}%', style: TextStyle(color: AppColors.neonPink, fontSize: 12, fontWeight: FontWeight.bold)),
                         ],
                       ),
                       SliderTheme(
                         data: SliderThemeData(
-                          trackHeight: 2,
-                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
+                          overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
                           activeTrackColor: audioService.trebleGain > 0 ? AppColors.neonPink : AppColors.divider,
                           inactiveTrackColor: AppColors.divider,
                           thumbColor: audioService.trebleGain > 0 ? AppColors.neonPink : AppColors.textSecondary,

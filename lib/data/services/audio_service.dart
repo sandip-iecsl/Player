@@ -140,9 +140,10 @@ class AudioServiceHandler extends BaseAudioHandler {
   double get maxVolumeLimit => _maxVolumeLimit;
   Stream<double> get volumeStream => _volumeController.stream;
 
-  // ── EQ State ────────────────────────────────────────────────────────────
-  double _bassGain = 0.0; // 0.0 to 1.0
-  double _trebleGain = 0.0; // 0.0 to 1.0
+  // ── EQ State & Bass Engine ──────────────────────────────────────────────
+  static const String _audioSettingsBoxName = 'audio_eq_settings';
+  double _bassGain = 0.70; // 0.0 to 1.0 (defaults to 70% deep bass boost)
+  double _trebleGain = 0.15; // 0.0 to 1.0
   AndroidEqualizer? _equalizer;
 
   double get bassGain => _bassGain;
@@ -158,11 +159,40 @@ class AudioServiceHandler extends BaseAudioHandler {
   void setBassGain(double gain) {
     _bassGain = gain.clamp(0.0, 1.0);
     _updateEqualizer();
+    _saveEqSettings();
   }
 
   void setTrebleGain(double gain) {
     _trebleGain = gain.clamp(0.0, 1.0);
     _updateEqualizer();
+    _saveEqSettings();
+  }
+
+  Future<void> _loadStoredEqSettings() async {
+    try {
+      if (!Hive.isBoxOpen(_audioSettingsBoxName)) {
+        await Hive.openBox(_audioSettingsBoxName);
+      }
+      final box = Hive.box(_audioSettingsBoxName);
+      _bassGain = (box.get('bassGain', defaultValue: 0.70) as num).toDouble().clamp(0.0, 1.0);
+      _trebleGain = (box.get('trebleGain', defaultValue: 0.15) as num).toDouble().clamp(0.0, 1.0);
+      await _updateEqualizer();
+    } catch (_) {
+      _bassGain = 0.70;
+      _trebleGain = 0.15;
+      await _updateEqualizer();
+    }
+  }
+
+  Future<void> _saveEqSettings() async {
+    try {
+      if (!Hive.isBoxOpen(_audioSettingsBoxName)) {
+        await Hive.openBox(_audioSettingsBoxName);
+      }
+      final box = Hive.box(_audioSettingsBoxName);
+      await box.put('bassGain', _bassGain);
+      await box.put('trebleGain', _trebleGain);
+    } catch (_) {}
   }
 
   Future<void> _updateEqualizer() async {
@@ -170,14 +200,37 @@ class AudioServiceHandler extends BaseAudioHandler {
     try {
       final parameters = await _equalizer!.parameters;
       final max = parameters.maxDecibels;
-      if (parameters.bands.isNotEmpty) {
-         // Bass is band 0
-         parameters.bands.first.setGain(_bassGain * max);
-         // Treble is last band
-         parameters.bands.last.setGain(_trebleGain * max);
+      final bands = parameters.bands;
+      if (bands.isNotEmpty) {
+        final numBands = bands.length;
+        // Multi-stage low-frequency curve: Sub-bass + Punch + Warm low-mids
+        if (numBands > 0) {
+          // Band 0: Deep Sub-Bass (typically ~60 Hz)
+          bands[0].setGain(_bassGain * max);
+        }
+        if (numBands > 1) {
+          // Band 1: Mid-Bass / Kick / Punch (typically ~230 Hz)
+          bands[1].setGain(_bassGain * max * 0.85);
+        }
+        if (numBands > 2 && _bassGain > 0.4) {
+          // Band 2: Warm acoustic body (typically ~910 Hz)
+          bands[2].setGain((_bassGain - 0.4) * max * 0.35);
+        }
+
+        // Treble & High-frequency brilliance
+        if (numBands >= 5) {
+          bands[3].setGain(_trebleGain * max * 0.4);
+          bands[4].setGain(_trebleGain * max);
+        } else if (numBands >= 4) {
+          bands[2].setGain(_trebleGain * max * 0.3);
+          bands[3].setGain(_trebleGain * max);
+        } else if (numBands > 0) {
+          bands.last.setGain(_trebleGain * max);
+        }
       }
-      _equalizer!.setEnabled(_bassGain > 0 || _trebleGain > 0);
-      print('[Audio] 🎛️ Equalizer updated: Bass=$_bassGain, Treble=$_trebleGain');
+      final bool shouldEnable = _bassGain > 0 || _trebleGain > 0;
+      await _equalizer!.setEnabled(shouldEnable);
+      print('[Audio] 🎛️ Equalizer active: Bass=${(_bassGain * 100).toInt()}% (+${(_bassGain * max).toStringAsFixed(1)}dB), Treble=${(_trebleGain * 100).toInt()}%, Enabled=$shouldEnable');
     } catch (e) {
       print('[Audio] ❌ Failed to update equalizer: $e');
     }
@@ -230,6 +283,7 @@ class AudioServiceHandler extends BaseAudioHandler {
 
   AudioServiceHandler() {
     _initAudioPlayer();
+    _loadStoredEqSettings();
     _tasteEngine.init();
     _setupPlayerListeners();
     _setupConnectivityListener();
@@ -987,6 +1041,7 @@ class AudioServiceHandler extends BaseAudioHandler {
             if (_playSessionId != currentSession) return;
             await _audioPlayer.play();
             _consecutiveFailures = 0;
+            unawaited(_updateEqualizer());
             print('[Audio] ✅ Local file playback started');
             return;
           }
@@ -1034,6 +1089,7 @@ class AudioServiceHandler extends BaseAudioHandler {
           print('[Audio] ℹ️ Invoking play()...');
           await _audioPlayer.play();
           _consecutiveFailures = 0; // ✅ Reset on successful play
+          unawaited(_updateEqualizer());
           unawaited(_warmAdjacentStreams());
           print('[Audio] ✅ Playback started successfully!');
           return;
