@@ -56,7 +56,13 @@ class DownloadService {
       }
 
       debugPrint('[Download] 🚀 Starting download: "${song.title}" ($targetBitrate - Format ID: $targetFormatId)');
-      final savedPath = await _downloadOnMobile(song, audioUrl, onProgress);
+      final savedPath = await _downloadOnMobile(
+        song,
+        audioUrl,
+        onProgress,
+        selectedFormat: selectedFormat,
+        targetFormatId: targetFormatId,
+      );
 
       if (savedPath != null) {
         // Register in offline_songs Hive box with bitrate and format metadata
@@ -105,8 +111,10 @@ class DownloadService {
   Future<String?> _downloadOnMobile(
     Song song,
     String audioUrl,
-    Function(int, int) onProgress,
-  ) async {
+    Function(int, int) onProgress, {
+    YouTubeAudioFormat? selectedFormat,
+    String? targetFormatId,
+  }) async {
     try {
       final directory = await getDownloadsDirectory();
       if (directory == null) {
@@ -121,10 +129,11 @@ class DownloadService {
 
       final isYoutube = song.isYoutubeImport || song.id.startsWith('yt_') || song.youtubeUrl != null;
       final selectedExtension = selectedFormat?.format.toLowerCase();
-      final isWebm = selectedExtension == 'webm' || selectedExtension == 'opus' || targetFormatId == '249' || targetFormatId == '251';
+      final isOpus = selectedExtension == 'opus' || targetFormatId == '251' || targetFormatId == '250';
+      final isWebm = selectedExtension == 'webm' || targetFormatId == '249';
       final ext = isYoutube
-          ? (isWebm ? 'webm' : 'm4a')
-          : 'mp3';
+          ? (isOpus ? 'opus' : isWebm ? 'webm' : 'm4a')
+          : (selectedExtension ?? 'mp3');
       final fileName = '${_sanitizeFileName(song.title)}.$ext';
       final filePath = '${auraDir.path}/$fileName';
 
@@ -151,9 +160,11 @@ class DownloadService {
     try {
       final directory = await getDownloadsDirectory();
       if (directory == null) return false;
-      final mp3Path = '${directory.path}/AuraPlayer/${_sanitizeFileName(song.title)}.mp3';
-      final m4aPath = '${directory.path}/AuraPlayer/${_sanitizeFileName(song.title)}.m4a';
-      return File(mp3Path).existsSync() || File(m4aPath).existsSync();
+      final base = '${directory.path}/AuraPlayer/${_sanitizeFileName(song.title)}';
+      for (final ext in ['m4a', 'opus', 'webm', 'mp3']) {
+        if (File('$base.$ext').existsSync()) return true;
+      }
+      return false;
     } catch (e) {
       return false;
     }
@@ -169,7 +180,11 @@ class DownloadService {
       return auraDir
           .listSync()
           .whereType<File>()
-          .where((f) => f.path.endsWith('.mp3') || f.path.endsWith('.m4a'))
+          .where((f) =>
+              f.path.endsWith('.mp3') ||
+              f.path.endsWith('.m4a') ||
+              f.path.endsWith('.opus') ||
+              f.path.endsWith('.webm'))
           .toList();
     } catch (e) {
       return [];
@@ -181,13 +196,12 @@ class DownloadService {
     try {
       final directory = await getDownloadsDirectory();
       if (directory == null) return;
-      final mp3Path = '${directory.path}/AuraPlayer/${_sanitizeFileName(song.title)}.mp3';
-      final m4aPath = '${directory.path}/AuraPlayer/${_sanitizeFileName(song.title)}.m4a';
-      for (final p in [mp3Path, m4aPath]) {
-        final file = File(p);
+      final base = '${directory.path}/AuraPlayer/${_sanitizeFileName(song.title)}';
+      for (final ext in ['m4a', 'opus', 'webm', 'mp3']) {
+        final file = File('$base.$ext');
         if (await file.exists()) {
           await file.delete();
-          debugPrint('[Download] ✅ Deleted: ${song.title}');
+          debugPrint('[Download] ✅ Deleted: ${song.title}.$ext');
         }
       }
     } catch (e) {
