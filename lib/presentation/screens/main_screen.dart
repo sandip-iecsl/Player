@@ -162,10 +162,17 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
 
   /// Handles Android device physical back button and gesture navigation
   Future<void> _handleBackPress() async {
-    // 1. If full player panel is open, collapse it first
+    // 1. If full player panel is open or sliding, collapse it back to current screen
     try {
-      if (_panelController.isAttached && _panelController.isPanelOpen) {
-        _panelController.close();
+      if (_isPanelOpen || (_panelController.isAttached && (_panelController.isPanelOpen || _panelController.isPanelShown))) {
+        if (_panelController.isAttached) {
+          await _panelController.close();
+        }
+        if (mounted) {
+          setState(() {
+            _isPanelOpen = false;
+          });
+        }
         return;
       }
     } catch (_) {}
@@ -268,10 +275,13 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
             ? null
             : BottomNavigationBar(
                 currentIndex: _currentIndex,
-          onTap: (index) {
+          onTap: (index) async {
             try {
-              if (_panelController.isAttached && _panelController.isPanelOpen) {
-                _panelController.close();
+              if (_panelController.isAttached && (_panelController.isPanelOpen || _isPanelOpen)) {
+                await _panelController.close();
+                if (mounted) {
+                  setState(() => _isPanelOpen = false);
+                }
               }
             } catch (_) {}
             if (_currentIndex == 1 && index != 1) {
@@ -314,18 +324,37 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
               color: Colors.transparent,
               backdropEnabled: false,
               renderPanelSheet: false,
+              onPanelOpened: () {
+                if (!_isPanelOpen && mounted) {
+                  setState(() => _isPanelOpen = true);
+                }
+              },
+              onPanelClosed: () {
+                if (_isPanelOpen && mounted) {
+                  setState(() => _isPanelOpen = false);
+                }
+              },
               onPanelSlide: (position) {
                 // position: 0.0 = closed, 1.0 = fully open
-                // Hide mini player when panel starts opening (> 0.1)
-                final shouldHide = position > 0.1;
-                if (shouldHide != _isPanelOpen) {
+                // Hide mini player when panel starts opening (> 0.05)
+                final shouldHide = position > 0.05;
+                if (shouldHide != _isPanelOpen && mounted) {
                   setState(() => _isPanelOpen = shouldHide);
                 }
               },
               panel: currentSong != null
                   ? FullPlayer(
                       currentSong: currentSong,
-                      onClose: () => _panelController.close(),
+                      onClose: () async {
+                        try {
+                          if (_panelController.isAttached) {
+                            await _panelController.close();
+                          }
+                        } catch (_) {}
+                        if (mounted) {
+                          setState(() => _isPanelOpen = false);
+                        }
+                      },
                     )
                   : const SizedBox.shrink(),
               body: Padding(
@@ -393,7 +422,14 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
                   child: FloatingMiniPlayer(
                     key: ValueKey(currentSong.id),
                     song: currentSong,
-                    onTap: () => _panelController.open(),
+                    onTap: () async {
+                      setState(() => _isPanelOpen = true);
+                      try {
+                        if (_panelController.isAttached) {
+                          await _panelController.open();
+                        }
+                      } catch (_) {}
+                    },
                   ),
                 ),
               ),

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:audio_service/audio_service.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:audio_session/audio_session.dart';
 import 'package:dio/dio.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import '../../domain/entities/song.dart';
@@ -143,8 +144,9 @@ class AudioServiceHandler extends BaseAudioHandler {
   // ── EQ State & Bass Engine ──────────────────────────────────────────────
   static const String _audioSettingsBoxName = 'audio_eq_settings';
   double _bassGain = 0.70; // 0.0 to 1.0 (defaults to 70% deep bass boost)
-  double _trebleGain = 0.15; // 0.0 to 1.0
+  double _trebleGain = 0.35; // 0.0 to 1.0 (defaults to 35% crisp treble)
   AndroidEqualizer? _equalizer;
+  AndroidLoudnessEnhancer? _loudnessEnhancer;
 
   double get bassGain => _bassGain;
   double get trebleGain => _trebleGain;
@@ -168,6 +170,13 @@ class AudioServiceHandler extends BaseAudioHandler {
     _saveEqSettings();
   }
 
+  void setAudioProfile(double bass, double treble) {
+    _bassGain = bass.clamp(0.0, 1.0);
+    _trebleGain = treble.clamp(0.0, 1.0);
+    _updateEqualizer();
+    _saveEqSettings();
+  }
+
   Future<void> _loadStoredEqSettings() async {
     try {
       if (!Hive.isBoxOpen(_audioSettingsBoxName)) {
@@ -175,11 +184,11 @@ class AudioServiceHandler extends BaseAudioHandler {
       }
       final box = Hive.box(_audioSettingsBoxName);
       _bassGain = (box.get('bassGain', defaultValue: 0.70) as num).toDouble().clamp(0.0, 1.0);
-      _trebleGain = (box.get('trebleGain', defaultValue: 0.15) as num).toDouble().clamp(0.0, 1.0);
+      _trebleGain = (box.get('trebleGain', defaultValue: 0.35) as num).toDouble().clamp(0.0, 1.0);
       await _updateEqualizer();
     } catch (_) {
       _bassGain = 0.70;
-      _trebleGain = 0.15;
+      _trebleGain = 0.35;
       await _updateEqualizer();
     }
   }
@@ -205,24 +214,24 @@ class AudioServiceHandler extends BaseAudioHandler {
         final numBands = bands.length;
         // Multi-stage low-frequency curve: Sub-bass + Punch + Warm low-mids
         if (numBands > 0) {
-          // Band 0: Deep Sub-Bass (typically ~60 Hz)
+          // Band 0: Deep Sub-Bass (~60 Hz)
           bands[0].setGain(_bassGain * max);
         }
         if (numBands > 1) {
-          // Band 1: Mid-Bass / Kick / Punch (typically ~230 Hz)
-          bands[1].setGain(_bassGain * max * 0.85);
+          // Band 1: Mid-Bass / Kick / Punch (~230 Hz)
+          bands[1].setGain(_bassGain * max * 0.90);
         }
-        if (numBands > 2 && _bassGain > 0.4) {
-          // Band 2: Warm acoustic body (typically ~910 Hz)
-          bands[2].setGain((_bassGain - 0.4) * max * 0.35);
+        if (numBands > 2 && _bassGain > 0.3) {
+          // Band 2: Warm acoustic body (~910 Hz)
+          bands[2].setGain((_bassGain - 0.3) * max * 0.35);
         }
 
-        // Treble & High-frequency brilliance
+        // Treble & High-frequency brilliance for crystal clarity on Bluetooth speakers
         if (numBands >= 5) {
-          bands[3].setGain(_trebleGain * max * 0.4);
+          bands[3].setGain(_trebleGain * max * 0.60);
           bands[4].setGain(_trebleGain * max);
         } else if (numBands >= 4) {
-          bands[2].setGain(_trebleGain * max * 0.3);
+          bands[2].setGain(_trebleGain * max * 0.40);
           bands[3].setGain(_trebleGain * max);
         } else if (numBands > 0) {
           bands.last.setGain(_trebleGain * max);
@@ -230,6 +239,16 @@ class AudioServiceHandler extends BaseAudioHandler {
       }
       final bool shouldEnable = _bassGain > 0 || _trebleGain > 0;
       await _equalizer!.setEnabled(shouldEnable);
+
+      // Hardware acoustic loudness boost for Bluetooth speakers / external audio devices
+      if (_loudnessEnhancer != null) {
+        final double targetGain = (_bassGain * 0.6 + _trebleGain * 0.4);
+        try {
+          await _loudnessEnhancer!.setTargetGain(targetGain * 5.0); // 0.0 to 5.0 dB
+          await _loudnessEnhancer!.setEnabled(shouldEnable && targetGain > 0);
+        } catch (_) {}
+      }
+
       print('[Audio] 🎛️ Equalizer active: Bass=${(_bassGain * 100).toInt()}% (+${(_bassGain * max).toStringAsFixed(1)}dB), Treble=${(_trebleGain * 100).toInt()}%, Enabled=$shouldEnable');
     } catch (e) {
       print('[Audio] ❌ Failed to update equalizer: $e');
@@ -269,8 +288,12 @@ class AudioServiceHandler extends BaseAudioHandler {
     try {
       if (Platform.isAndroid) {
         _equalizer = AndroidEqualizer();
+        _loudnessEnhancer = AndroidLoudnessEnhancer();
         _audioPlayer = AudioPlayer(
-          audioPipeline: AudioPipeline(androidAudioEffects: [_equalizer!])
+          audioPipeline: AudioPipeline(androidAudioEffects: [
+            _equalizer!,
+            _loudnessEnhancer!,
+          ])
         );
       } else {
         _audioPlayer = AudioPlayer();
@@ -281,8 +304,24 @@ class AudioServiceHandler extends BaseAudioHandler {
     }
   }
 
+  Future<void> _configureAudioSession() async {
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+
+      // Re-apply DSP and Equalizer on Bluetooth / Headphone / Speaker connection changes
+      session.devicesChangedEventStream.listen((event) {
+        print('[Audio] 🎧 Audio output devices changed (Bluetooth/Speaker). Re-syncing hardware DSP...');
+        _updateEqualizer();
+      });
+    } catch (e) {
+      print('[Audio] ⚠️ AudioSession setup: $e');
+    }
+  }
+
   AudioServiceHandler() {
     _initAudioPlayer();
+    _configureAudioSession();
     _loadStoredEqSettings();
     _tasteEngine.init();
     _setupPlayerListeners();
