@@ -134,6 +134,7 @@ class OfflineStorageService {
         await _dio.download(
           primaryDownloadUrl,
           audioPath,
+          deleteOnError: true,
           onReceiveProgress: (count, total) {
             if (total != -1 && total > 0) {
               onProgress(count / total);
@@ -146,6 +147,7 @@ class OfflineStorageService {
           await _dio.download(
             downloadEndpointUrl,
             audioPath,
+            deleteOnError: true,
             onReceiveProgress: (count, total) {
               if (total != -1 && total > 0) {
                 onProgress(count / total);
@@ -157,12 +159,24 @@ class OfflineStorageService {
         }
       }
 
+      // Verify file integrity and minimum valid size (at least 100KB for valid audio)
+      final downloadedAudioFile = File(audioPath);
+      if (!downloadedAudioFile.existsSync() || downloadedAudioFile.lengthSync() < 100 * 1024) {
+        final actualSize = downloadedAudioFile.existsSync() ? downloadedAudioFile.lengthSync() : 0;
+        if (downloadedAudioFile.existsSync()) {
+          try {
+            downloadedAudioFile.deleteSync();
+          } catch (_) {}
+        }
+        throw Exception('Downloaded audio file is invalid or corrupted ($actualSize bytes).');
+      }
+
       // Download album art if available
       String? localArtPath;
       if (song.albumArt != null && song.albumArt!.startsWith('http')) {
         final artPath = '${dir.path}/offline_art_${song.id}.jpg';
         try {
-          await _dio.download(song.albumArt!, artPath);
+          await _dio.download(song.albumArt!, artPath, deleteOnError: true);
           localArtPath = artPath;
         } catch (e) {
           debugPrint('[Offline] Failed to download album art: $e');
@@ -195,10 +209,19 @@ class OfflineStorageService {
         'youtubeUrl': song.youtubeUrl,
       });
 
-      debugPrint('[Offline] ✅ Successfully downloaded and indexed "${song.title}" with Bitrate: $targetBitrate');
+      debugPrint('[Offline] ✅ Successfully downloaded and indexed "${song.title}" (${downloadedAudioFile.lengthSync()} bytes) with Bitrate: $targetBitrate');
       return true;
     } catch (e) {
       debugPrint('[Offline] ❌ Failed to download song: $e');
+      // Ensure any partially created/corrupt file is removed
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        for (final ext in ['m4a', 'webm', 'opus', 'mp3']) {
+          final f = File('${dir.path}/offline_${song.id}.$ext');
+          if (f.existsSync()) f.deleteSync();
+        }
+      } catch (_) {}
+      await box.delete(song.id);
       rethrow;
     }
   }

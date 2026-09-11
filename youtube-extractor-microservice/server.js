@@ -395,56 +395,96 @@ app.get('/api/youtube/download', async (req, res) => {
 
     console.log(`[Downloader] ⬇️ Streaming audio (${formatFilter}) for: ${targetUrl} (File: ${sanitizedFileName})`);
 
-    // Set streaming headers
-    res.setHeader('Content-Type', outputExtension === 'webm' ? 'audio/webm' : 'audio/mp4');
-    res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFileName}"; filename*=UTF-8''${sanitizedFileName}`);
-    res.setHeader('Accept-Ranges', 'bytes');
-
-    const ytDlpProcess = spawn(YTDLP_BIN, [
+    // 1. Resolve direct audio stream URL with yt-dlp -g to preserve intact container headers (no moov/fragment corruption on 30-40 min audio)
+    execFile(YTDLP_BIN, [
       '--extractor-args', 'youtube:player_client=android,ios,web',
       '-f', formatFilter,
-      '--buffer-size', '16K',
-      '-q', '0',
-      '--audio-quality', '0',
-      '-o', '-',
+      '-g',
       '--no-playlist',
-      '--no-part',
       '--no-warnings',
       '--',
       targetUrl
-    ]);
+    ], { timeout: 35000 }, async (err, stdout, stderr) => {
+      if (!err && stdout && stdout.trim().startsWith('http')) {
+        const directAudioUrl = stdout.trim().split('\n')[0].trim();
+        console.log(`[Downloader] 🎯 Resolved direct audio CDN URL for: ${targetUrl}`);
 
-    const failDownload = (message, details) => {
-      console.error(`[Downloader] ❌ ${message}${details ? `: ${details}` : ''}`);
-      if (!res.headersSent) {
-        res.status(500).json({ error: 'Stream failed', details });
-      } else if (!res.writableEnded) {
-        res.destroy();
+        try {
+          const response = await axios.get(directAudioUrl, {
+            responseType: 'stream',
+            timeout: 120000,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': '*/*'
+            }
+          });
+
+          res.setHeader('Content-Type', response.headers['content-type'] || (outputExtension === 'webm' ? 'audio/webm' : 'audio/mp4'));
+          if (response.headers['content-length']) {
+            res.setHeader('Content-Length', response.headers['content-length']);
+          }
+          res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFileName}"; filename*=UTF-8''${sanitizedFileName}`);
+          res.setHeader('Accept-Ranges', 'bytes');
+
+          response.data.pipe(res);
+          return;
+        } catch (proxyErr) {
+          console.warn(`[Downloader] ⚠️ Proxy stream redirecting directly: ${proxyErr.message}`);
+          return res.redirect(directAudioUrl);
+        }
       }
-    };
 
-    res.on('error', (err) => {
-      console.warn(`[Downloader] ⚠️ HTTP response stream error: ${err.message}`);
-      ytDlpProcess.kill('SIGTERM');
-    });
+      // Fallback: spawn yt-dlp stream if -g resolution fails
+      res.setHeader('Content-Type', outputExtension === 'webm' ? 'audio/webm' : 'audio/mp4');
+      res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFileName}"; filename*=UTF-8''${sanitizedFileName}`);
+      res.setHeader('Accept-Ranges', 'bytes');
 
-    ytDlpProcess.stdout.on('error', (err) => {
-      failDownload('yt-dlp output stream error', err.message);
-    });
-    ytDlpProcess.stdout.pipe(res);
+      const ytDlpProcess = spawn(YTDLP_BIN, [
+        '--extractor-args', 'youtube:player_client=android,ios,web',
+        '-f', formatFilter,
+        '--buffer-size', '64K',
+        '-q', '0',
+        '--audio-quality', '0',
+        '-o', '-',
+        '--no-playlist',
+        '--no-part',
+        '--no-warnings',
+        '--',
+        targetUrl
+      ]);
 
-    ytDlpProcess.stderr.on('data', (data) => {
-      console.warn(`[Downloader] yt-dlp log: ${data.toString().trim()}`);
-    });
+      const failDownload = (message, details) => {
+        console.error(`[Downloader] ❌ ${message}${details ? `: ${details}` : ''}`);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Stream failed', details });
+        } else if (!res.writableEnded) {
+          res.destroy();
+        }
+      };
 
-    ytDlpProcess.on('error', (err) => {
-      failDownload('yt-dlp spawn error', err.message);
-    });
+      res.on('error', (e) => {
+        console.warn(`[Downloader] ⚠️ HTTP response stream error: ${e.message}`);
+        ytDlpProcess.kill('SIGTERM');
+      });
 
-    ytDlpProcess.on('close', (code, signal) => {
-      if (code !== 0 && !res.writableEnded) {
-        failDownload(`yt-dlp exited with code ${code}`, signal || undefined);
-      }
+      ytDlpProcess.stdout.on('error', (e) => {
+        failDownload('yt-dlp output stream error', e.message);
+      });
+      ytDlpProcess.stdout.pipe(res);
+
+      ytDlpProcess.stderr.on('data', (data) => {
+        console.warn(`[Downloader] yt-dlp log: ${data.toString().trim()}`);
+      });
+
+      ytDlpProcess.on('error', (e) => {
+        failDownload('yt-dlp spawn error', e.message);
+      });
+
+      ytDlpProcess.on('close', (code, signal) => {
+        if (code !== 0 && !res.writableEnded) {
+          failDownload(`yt-dlp exited with code ${code}`, signal || undefined);
+        }
+      });
     });
 
   } catch (err) {

@@ -165,6 +165,7 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
     // 1. If full player panel is open or sliding, collapse it back to current screen
     try {
       if (_isPanelOpen || (_panelController.isAttached && (_panelController.isPanelOpen || _panelController.isPanelShown))) {
+        _lastBackPressTime = null;
         if (_panelController.isAttached) {
           await _panelController.close();
         }
@@ -180,18 +181,21 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
     // 2. Check if the current tab's nested navigator has a sub-page to pop (e.g. PlaylistScreen, LocalSongsScreen)
     final currentNav = _navigatorKeys[_currentIndex].currentState;
     if (currentNav != null && currentNav.canPop()) {
+      _lastBackPressTime = null;
       currentNav.pop();
       return;
     }
 
     // 3. Check if global root modal/dialog stack can pop
     if (navigatorKey.currentState != null && navigatorKey.currentState!.canPop()) {
+      _lastBackPressTime = null;
       navigatorKey.currentState!.pop();
       return;
     }
 
     // 4. Pop and navigate back through tab history (e.g. Settings -> Library -> Search -> Home)
     if (_tabHistory.length > 1) {
+      _lastBackPressTime = null;
       setState(() {
         _tabHistory.removeLast();
         final prevTab = _tabHistory.last;
@@ -203,6 +207,7 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
       return;
     } else if (_currentIndex != 0) {
       // If history is exhausted but not on Tab 0 (Home), return to Home
+      _lastBackPressTime = null;
       setState(() {
         if (_currentIndex == 1) {
           _searchKey.currentState?.clearState();
