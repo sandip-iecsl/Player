@@ -147,6 +147,8 @@ class AudioServiceHandler extends BaseAudioHandler {
   double _trebleGain = 0.35; // 0.0 to 1.0 (defaults to 35% crisp treble)
   AndroidEqualizer? _equalizer;
   AndroidLoudnessEnhancer? _loudnessEnhancer;
+  Timer? _eqDebounceTimer;
+  bool _isUpdatingEq = false;
 
   double get bassGain => _bassGain;
   double get trebleGain => _trebleGain;
@@ -160,21 +162,32 @@ class AudioServiceHandler extends BaseAudioHandler {
 
   void setBassGain(double gain) {
     _bassGain = gain.clamp(0.0, 1.0);
-    _updateEqualizer();
+    _scheduleEqualizerUpdate();
     _saveEqSettings();
   }
 
   void setTrebleGain(double gain) {
     _trebleGain = gain.clamp(0.0, 1.0);
-    _updateEqualizer();
+    _scheduleEqualizerUpdate();
     _saveEqSettings();
   }
 
   void setAudioProfile(double bass, double treble) {
     _bassGain = bass.clamp(0.0, 1.0);
     _trebleGain = treble.clamp(0.0, 1.0);
-    _updateEqualizer();
+    _scheduleEqualizerUpdate(immediate: true);
     _saveEqSettings();
+  }
+
+  void _scheduleEqualizerUpdate({bool immediate = false}) {
+    _eqDebounceTimer?.cancel();
+    if (immediate) {
+      _updateEqualizer();
+    } else {
+      _eqDebounceTimer = Timer(const Duration(milliseconds: 25), () {
+        _updateEqualizer();
+      });
+    }
   }
 
   Future<void> _loadStoredEqSettings() async {
@@ -206,59 +219,73 @@ class AudioServiceHandler extends BaseAudioHandler {
 
   Future<void> _updateEqualizer() async {
     if (_equalizer == null) return;
+    if (_isUpdatingEq) return;
+    _isUpdatingEq = true;
+
     try {
       final parameters = await _equalizer!.parameters;
       final max = parameters.maxDecibels;
       final bands = parameters.bands;
+
       if (bands.isNotEmpty) {
         final numBands = bands.length;
-        // Multi-stage low-frequency curve: Sub-bass + Punch + Warm low-mids
-        if (numBands > 0) {
-          // Band 0: Deep Sub-Bass (~60 Hz)
-          bands[0].setGain(_bassGain * max);
-        }
-        if (numBands > 1) {
-          // Band 1: Mid-Bass / Kick / Punch (~230 Hz)
-          bands[1].setGain(_bassGain * max * 0.90);
-        }
-        if (numBands > 2 && _bassGain > 0.3) {
-          // Band 2: Warm acoustic body (~910 Hz)
-          bands[2].setGain((_bassGain - 0.3) * max * 0.35);
-        }
 
-        // Treble & High-frequency brilliance for crystal clarity on Bluetooth speakers
+        // Perceptual logarithmic low-frequency curve: deep sub-bass + tight kick (no mud or boxy distortion)
+        final double subBass = pow(_bassGain, 1.15).toDouble() * max * 0.95;
+        final double midBass = pow(_bassGain, 1.25).toDouble() * max * 0.70;
+        final double lowMid = _bassGain > 0.45 ? (_bassGain - 0.45) * max * 0.18 : 0.0;
+
+        if (numBands > 0) bands[0].setGain(subBass);
+        if (numBands > 1) bands[1].setGain(midBass);
+        if (numBands > 2) bands[2].setGain(lowMid);
+
+        // Silky high-frequency brilliance: presence + air shimmer (no harsh sibilance or ear fatigue)
+        final double presence = pow(_trebleGain, 1.10).toDouble() * max * 0.50;
+        final double air = pow(_trebleGain, 1.05).toDouble() * max * 0.85;
+
         if (numBands >= 5) {
-          bands[3].setGain(_trebleGain * max * 0.60);
-          bands[4].setGain(_trebleGain * max);
+          bands[3].setGain(presence);
+          bands[4].setGain(air);
         } else if (numBands >= 4) {
-          bands[2].setGain(_trebleGain * max * 0.40);
-          bands[3].setGain(_trebleGain * max);
+          bands[2].setGain(presence);
+          bands[3].setGain(air);
         } else if (numBands > 0) {
-          bands.last.setGain(_trebleGain * max);
+          bands.last.setGain(air);
         }
       }
-      final bool shouldEnable = _bassGain > 0 || _trebleGain > 0;
+
+      final bool shouldEnable = _bassGain > 0.01 || _trebleGain > 0.01;
       await _equalizer!.setEnabled(shouldEnable);
 
-      // Hardware acoustic loudness boost for Bluetooth speakers / external audio devices
+      // Smooth acoustic loudness boost for Bluetooth speakers / external audio devices (0.0 to 1.8 dB max to avoid pumping)
       if (_loudnessEnhancer != null) {
-        final double targetGain = (_bassGain * 0.6 + _trebleGain * 0.4);
+        final double targetGain = (_bassGain * 0.60 + _trebleGain * 0.40) * 1.8;
         try {
-          await _loudnessEnhancer!.setTargetGain(targetGain * 5.0); // 0.0 to 5.0 dB
-          await _loudnessEnhancer!.setEnabled(shouldEnable && targetGain > 0);
+          await _loudnessEnhancer!.setTargetGain(targetGain);
+          await _loudnessEnhancer!.setEnabled(shouldEnable && targetGain > 0.05);
         } catch (_) {}
       }
 
-      print('[Audio] 🎛️ Equalizer active: Bass=${(_bassGain * 100).toInt()}% (+${(_bassGain * max).toStringAsFixed(1)}dB), Treble=${(_trebleGain * 100).toInt()}%, Enabled=$shouldEnable');
+      // Smooth dynamic headroom / anti-clipping compensation:
+      // Prevents digital clipping & distortion when high bass/treble boost is applied
+      final double totalBoost = (_bassGain * 0.75 + _trebleGain * 0.25);
+      final double headroom = 1.0 / (1.0 + (totalBoost * 0.25));
+      await _audioPlayer.setVolume((_volumeMultiplier * headroom).clamp(0.0, _maxVolumeLimit));
+
+      print('[Audio] 🎛️ Equalizer active: Bass=${(_bassGain * 100).toInt()}%, Treble=${(_trebleGain * 100).toInt()}%, Enabled=$shouldEnable');
     } catch (e) {
       print('[Audio] ❌ Failed to update equalizer: $e');
+    } finally {
+      _isUpdatingEq = false;
     }
   }
 
-  /// Sets volume directly (clamped 0.0 to _maxVolumeLimit)
+  /// Sets volume directly (clamped 0.0 to _maxVolumeLimit) with dynamic headroom protection
   Future<void> setVolume(double volume) async {
     _volumeMultiplier = volume.clamp(0.0, _maxVolumeLimit);
-    await _audioPlayer.setVolume(_volumeMultiplier);
+    final double totalBoost = (_bassGain * 0.75 + _trebleGain * 0.25);
+    final double headroom = 1.0 / (1.0 + (totalBoost * 0.25));
+    await _audioPlayer.setVolume((_volumeMultiplier * headroom).clamp(0.0, _maxVolumeLimit));
     _volumeController.add(_volumeMultiplier);
   }
 
