@@ -1387,7 +1387,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                                 decoration: BoxDecoration(
                                   color: (audioService.bassGain - preset.$2).abs() < 0.05
                                       ? AppColors.neonPink.withValues(alpha: 0.25)
-                                      : AppColors.surface,
+                                      : AppColors.deepSpaceBlackLight,
                                   borderRadius: BorderRadius.circular(12),
                                   border: Border.all(
                                     color: (audioService.bassGain - preset.$2).abs() < 0.05
