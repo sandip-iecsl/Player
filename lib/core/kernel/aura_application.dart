@@ -22,8 +22,15 @@ import '../security/security_policy_engine.dart';
 import '../capability/device_capability_engine.dart';
 import '../config/configuration_registry.dart';
 import '../provider/provider_registry.dart';
-import '../transaction/transaction_manager.dart';
 import '../permission/permission_engine.dart';
+import '../../domain/repositories/space_repository.dart';
+import '../../domain/repositories/gallery_repository.dart';
+import '../../domain/services/pairing_orchestrator.dart';
+import '../../data/repositories/space_repository_impl.dart';
+import '../../data/repositories/gallery_repository_impl.dart';
+import '../../data/services/drive_service.dart';
+import '../../data/services/drive_space_service.dart';
+import '../../data/services/permission_sync_service.dart';
 
 class AuraApplication {
   static final AuraApplication _instance = AuraApplication._internal();
@@ -123,6 +130,26 @@ class AuraApplication {
     coordinator.registerEngine(CacheEngine(), 4);
     coordinator.registerEngine(PresenceEngine(), 4);
     coordinator.registerEngine(NotificationEngine(), 4);
+
+    // Phase 5: Google Drive Decoupled Dual-Drive & Space Services
+    final driveService = DriveService();
+    final spaceRepo = SpaceRepositoryImpl();
+    final galleryRepo = GalleryRepositoryImpl(spaceRepository: spaceRepo, driveService: driveService);
+    final driveSpaceService = DriveSpaceService(spaceRepository: spaceRepo, driveService: driveService);
+    final permissionSyncService = PermissionSyncService();
+    final pairingOrchestrator = PairingOrchestrator(
+      spaceRepository: spaceRepo,
+      galleryRepository: galleryRepo,
+      driveSpaceService: driveSpaceService,
+      permissionSyncService: permissionSyncService,
+    );
+
+    di.registerSingleton<DriveService>(driveService);
+    di.registerSingleton<SpaceRepository>(spaceRepo);
+    di.registerSingleton<GalleryRepository>(galleryRepo);
+    di.registerSingleton<DriveSpaceService>(driveSpaceService);
+    di.registerSingleton<PermissionSyncService>(permissionSyncService);
+    di.registerSingleton<PairingOrchestrator>(pairingOrchestrator);
   }
 
   /// Clean shutdown of engines and container registry.

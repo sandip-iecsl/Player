@@ -15,6 +15,10 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    - smart_home/**
+    - jiosaavn-api/**
+    - youtube-extractor-microservice/**
+    - functions/**
 include: package:flutter_lints/flutter.yaml
 
 linter:

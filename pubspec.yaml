@@ -66,6 +66,12 @@ dependencies:
   csv: ^8.0.0
   scrollable_positioned_list: ^0.3.8
 
+  # Google Drive & Auth
+  googleapis: ^13.2.0
+  google_sign_in: ^6.2.2
+  extension_google_sign_in_as_googleapis_auth: ^2.0.12
+  http: ^1.2.0
+  crypto: ^3.0.3
 
   flutter_native_splash: ^2.4.4
   pointycastle: any
