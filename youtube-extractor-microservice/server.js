@@ -495,9 +495,168 @@ app.get('/api/youtube/download', async (req, res) => {
   }
 });
 
+/**
+ * MODULE 2 - Endpoint 3: GET /api/search/youtube
+ * Server-side secure YouTube search proxy protecting API keys
+ */
+app.get('/api/search/youtube', async (req, res) => {
+  try {
+    const query = req.query.q || req.query.query;
+    const limit = Math.min(parseInt(req.query.limit, 10) || 20, 50);
+
+    if (!query || typeof query !== 'string' || !query.trim()) {
+      return res.status(400).json({ error: 'Missing or empty "q" search parameter' });
+    }
+
+    const cleanQuery = query.trim();
+    console.log(`[Search] 🔍 Searching YouTube for: "${cleanQuery}" (limit: ${limit})`);
+
+    const apiKey = process.env.YOUTUBE_API_KEY?.trim();
+
+    // Strategy 1: Official YouTube Data API v3 (Server-Side only)
+    if (apiKey) {
+      try {
+        const ytRes = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+          params: {
+            part: 'snippet',
+            type: 'video',
+            videoCategoryId: '10', // Music Category
+            maxResults: limit,
+            q: cleanQuery,
+            key: apiKey,
+          },
+          timeout: 5000,
+        });
+
+        if (ytRes.data && Array.isArray(ytRes.data.items)) {
+          const results = ytRes.data.items.map((item) => {
+            const videoId = item.id?.videoId;
+            const snippet = item.snippet || {};
+            const rawTitle = snippet.title || 'YouTube Track';
+            const cleanTitle = cleanTrackTitle(rawTitle);
+
+            return {
+              id: videoId,
+              youtubeId: videoId,
+              title: cleanTitle,
+              artist: snippet.channelTitle || 'YouTube Artist',
+              channelTitle: snippet.channelTitle,
+              album: 'YouTube Music',
+              duration: 210,
+              thumbnail: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+              artworkUrl: snippet.thumbnails?.high?.url || snippet.thumbnails?.medium?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+              publishedAt: snippet.publishedAt,
+              streamUrl: `https://www.youtube.com/watch?v=${videoId}`,
+            };
+          });
+
+          console.log(`[Search] ✅ YouTube Data API returned ${results.length} tracks for "${cleanQuery}"`);
+          return res.json({ query: cleanQuery, source: 'youtube_data_api_v3', results });
+        }
+      } catch (apiErr) {
+        console.warn(`[Search] ⚠️ YouTube Data API failed (${apiErr.response?.status || apiErr.message}). Falling back to yt-dlp search...`);
+      }
+    }
+
+    // Strategy 2: yt-dlp ytsearch dump fallback
+    const ytDlpArgs = [
+      '--dump-single-json',
+      '--no-warnings',
+      '--flat-playlist',
+      '--no-check-certificates',
+      '-q', '0',
+      '--',
+      `ytsearch${limit}:${cleanQuery}`,
+    ];
+
+    execFile(YTDLP_BIN, ytDlpArgs, { timeout: 12000, maxBuffer: 15 * 1024 * 1024 }, (error, stdout, stderr) => {
+      if (!error && stdout) {
+        try {
+          const json = JSON.parse(stdout);
+          const entries = Array.isArray(json.entries) ? json.entries : [json];
+
+          const results = entries.filter((e) => e && (e.id || e.url)).map((item) => {
+            const videoId = item.id || extractVideoId(item.url || '');
+            const rawTitle = item.title || 'YouTube Audio';
+            const cleanTitle = cleanTrackTitle(rawTitle);
+            const artist = item.uploader || item.channel || 'YouTube Artist';
+            const durationSec = Math.round(Number(item.duration) || 0) || 180;
+            const thumbnail = item.thumbnail || (videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : null);
+
+            return {
+              id: videoId,
+              youtubeId: videoId,
+              title: cleanTitle,
+              artist: artist,
+              channelTitle: item.channel || item.uploader,
+              album: 'YouTube Music',
+              duration: durationSec,
+              thumbnail: thumbnail,
+              artworkUrl: thumbnail,
+              viewCount: item.view_count,
+              streamUrl: videoId ? `https://www.youtube.com/watch?v=${videoId}` : item.url,
+            };
+          });
+
+          console.log(`[Search] ✅ yt-dlp search resolved ${results.length} tracks for "${cleanQuery}"`);
+          return res.json({ query: cleanQuery, source: 'yt_dlp_search', results });
+        } catch (parseErr) {
+          console.warn(`[Search] ⚠️ yt-dlp parse warning: ${parseErr.message}`);
+        }
+      }
+
+      // Strategy 3: Fast JioSaavn fallback
+      axios.get('https://www.jiosaavn.com/api.php', {
+        params: {
+          __call: 'search.getResults',
+          _format: 'json',
+          _marker: '0',
+          api_version: '4',
+          ctx: 'web6dot0',
+          n: limit.toString(),
+          p: '1',
+          q: cleanQuery,
+        },
+        timeout: 4000,
+      }).then((saavnRes) => {
+        const rawResults = saavnRes.data?.results || [];
+        const fallbackResults = rawResults.map((item) => ({
+          id: item.id,
+          youtubeId: null,
+          title: cleanTrackTitle(item.title || item.song),
+          artist: item.more_info?.music || item.more_info?.primary_artists || 'Artist',
+          album: item.more_info?.album || 'Music',
+          duration: parseInt(item.more_info?.duration, 10) || 180,
+          thumbnail: item.image?.replace('150x150', '500x500'),
+          artworkUrl: item.image?.replace('150x150', '500x500'),
+          streamUrl: item.more_info?.encrypted_media_url ? `saavn_${item.id}` : null,
+        }));
+
+        console.log(`[Search] ✅ Fast fallback returned ${fallbackResults.length} tracks`);
+        return res.json({ query: cleanQuery, source: 'saavn_search_fallback', results: fallbackResults });
+      }).catch((fallbackErr) => {
+        return res.status(502).json({ error: 'Search failed across all backend engines', details: fallbackErr.message });
+      });
+    });
+
+  } catch (err) {
+    console.error(`[Search] 💥 Unexpected search error: ${err.message}`);
+    return res.status(500).json({ error: 'Internal search error', details: err.message });
+  }
+});
+
+/**
+ * Universal GET /api/search alias
+ */
+app.get('/api/search', (req, res) => {
+  req.url = '/api/search/youtube';
+  app.handle(req, res);
+});
+
 app.listen(PORT, () => {
   console.log(`🚀 Aura Player YouTube Extractor Microservice running on port ${PORT}`);
   console.log(`👉 Engine: ${YTDLP_BIN}`);
+  console.log(`👉 GET  /api/search/youtube?q=... (Backend Search Proxy)`);
   console.log(`👉 POST /api/youtube/extract (Multi-format HQ/MQ/LQ)`);
   console.log(`👉 GET  /api/youtube/download?formatId=...&quality=...`);
 });

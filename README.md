@@ -1,846 +1,580 @@
-# 🎵 Aura Player (`free_play`) — Complete Technical & Architectural Specification
+# 🎵 Aura Player — Complete Technical Architecture & Production Manual
 
-> **Aura Player** is an advanced, ad-free, offline-first music streaming, recommendation, and secure peer-to-peer communication application built with Flutter, Riverpod, Just Audio, Hive, and a custom Multi-Instance Cloud Firestore architecture.
+> **Aura Player** (`free_play`) is an ad-free, offline-first music streaming, discovery, and secure peer-to-peer communication application built with Flutter, Riverpod, Just Audio, Hive, Node.js microservices, and a Decoupled Dual-Database Cloud Firestore architecture.
 
 ---
 
 ## 📑 Table of Contents
-1. [Overview & Highlights](#-overview--highlights)
-2. [Architectural Principles & System Design](#-architectural-principles--system-design)
-3. [Multi-Database Firestore Architecture](#-multi-database-firestore-architecture)
-4. [Directory & File Structure](#-directory--file-structure)
-5. [End-to-End Functional Modules & Workflows](#-end-to-end-functional-modules--workflows)
-   - [1. Application Kernel & Multi-Phase Boot Sequence](#1-application-kernel--multi-phase-boot-sequence)
-   - [2. User Registration, Authentication & Identity Discovery](#2-user-registration-authentication--identity-discovery)
-   - [3. Audio Streaming, Session Management & Background Playback](#3-audio-streaming-session-management--background-playback)
-   - [4. Zero-Cost Multi-Provider Failover Search & YouTube-Style Intelligence](#4-zero-cost-multi-provider-failover-search--youtube-style-intelligence)
-   - [5. Offline-First Playlist Management & Sync Engine](#5-offline-first-playlist-management--sync-engine)
-   - [6. Multi-Format YouTube Import, Quality Selector & Offline Downloader](#6-multi-format-youtube-import-quality-selector--offline-downloader)
-   - [7. Secret Chat Room Connection & Passcode Handshake](#7-secret-chat-room-connection--passcode-handshake)
-   - [8. Real-Time Chat Messaging, Soft-Deletes & Database Pruning](#8-real-time-chat-messaging-soft-deletes--database-pruning)
-   - [9. Real-Time Presence & Focus Tracking Engine](#9-real-time-presence--focus-tracking-engine)
-   - [10. Admin Console, Diagnostics & ML Training](#10-admin-console-diagnostics--ml-training)
-   - [11. Resource Manager, Hardware Adaptation & Cache Eviction](#11-resource-manager-hardware-adaptation--cache-eviction)
-   - [12. Real-Time Hardware Strobe Light Beat Sync](#12-real-time-hardware-strobe-light-beat-sync)
-   - [13. Synchronized Scrolling Lyrics Engine](#13-synchronized-scrolling-lyrics-engine)
-   - [14. Local Taste Engine & Recommendation Matrix](#14-local-taste-engine--recommendation-matrix)
-   - [15. Regional IP Geolocation & Search Localization](#15-regional-ip-geolocation--search-localization)
-   - [16. Push Notification & Event Dispatcher Engine](#16-push-notification--event-dispatcher-engine)
-   - [17. Device Capability Profiling & Memory Scaling](#17-device-capability-profiling--memory-scaling)
-6. [Complete Codebase Index: Classes, Services, Engines & Functions](#-complete-codebase-index)
-7. [External APIs & Remote Data Sources](#-external-apis--remote-data-sources)
-8. [Firestore Database Schemas & Data Models](#-firestore-database-schemas--data-models)
-9. [State Management & Riverpod Providers](#-state-management--riverpod-providers)
-10. [Local Storage & Hive Cache Hierarchy](#-local-storage--hive-cache-hierarchy)
-11. [Setup, Build & Environment Configuration](#-setup-build--environment-configuration)
-12. [Security, Concurrency & Stability Guarantees](#-security-concurrency--stability-guarantees)
+1. [Project Overview](#1-project-overview)
+2. [Architecture Diagram](#2-architecture-diagram)
+3. [Folder Structure](#3-folder-structure)
+4. [Flutter App Architecture](#4-flutter-app-architecture)
+5. [Search Architecture](#5-search-architecture)
+6. [Search Pipeline](#6-search-pipeline)
+7. [Provider List](#7-provider-list)
+8. [Provider Responsibilities](#8-provider-responsibilities)
+9. [Ranking Pipeline](#9-ranking-pipeline)
+10. [Ranking Formula](#10-ranking-formula)
+11. [Deduplication Strategy](#11-deduplication-strategy)
+12. [Personalization Strategy](#12-personalization-strategy)
+13. [Autocomplete Engine](#13-autocomplete-engine)
+14. [Offline-First Behavior](#14-offline-first-behavior)
+15. [Cache Behavior & Hierarchy](#15-cache-behavior--hierarchy)
+16. [Quota Management](#16-quota-management)
+17. [Backend Architecture](#17-backend-architecture)
+18. [YouTube API Integration & Security](#18-youtube-api-integration--security)
+19. [MongoDB Atlas Search Configuration](#19-mongodb-atlas-search-configuration)
+20. [Firebase & Firestore Configuration](#20-firebase--firestore-configuration)
+21. [Environment Variables](#21-environment-variables)
+22. [Local Setup](#22-local-setup)
+23. [Backend Setup](#23-backend-setup)
+24. [Android Build Guide](#24-android-build-guide)
+25. [Testing Suite](#25-testing-suite)
+26. [Deployment Guide](#26-deployment-guide)
+27. [Troubleshooting & Diagnostics](#27-troubleshooting--diagnostics)
+28. [Human / Manual Steps](#28-human--manual-steps)
+29. [Known Limitations](#29-known-limitations)
+30. [Cost & Free-Tier Assumptions](#30-cost--free-tier-assumptions)
+31. [Provider Policy & Licensing Cautions](#31-provider-policy--licensing-cautions)
+32. [HUMAN ACTION REQUIRED Document](#32-human-action-required-document)
 
 ---
 
-## 🌟 Overview & Highlights
-
-Aura Player (`free_play`) delivers a high-fidelity, ad-free streaming experience with local caching, synchronized lyrics, audio visualizers, and hardware-level strobe synchronization, paired with a hidden, passcode-protected direct messaging layer.
-
-### Key Capabilities:
-- **Audio Engine:** High-performance audio playback powered by `just_audio` and `audio_service` with session locking, glitchless track switching, auto-skipping, and lock-screen controls.
-- **Zero-Cost Multi-Provider Failover Search:** 3-Tier resilient search chain (Tier 0: Hive Cache, Tier 1: MongoDB Atlas Search, Tier 2: Algolia Free Tier, Tier 3: Client-Side Fuzzy Engine) with automatic 3s timeout failover and 0 cloud reads on offline fallback.
-- **YouTube-Style Relevance & Ranking:** Multi-factor ranking formula balancing text similarity (0.40), global play velocity (0.30), user taste affinity (0.20), and market trends (0.10) with typo tolerance (Levenshtein & Jaro-Winkler) and N-gram Firestore tokenization.
-- **Multi-Format YouTube Extractor:** Multi-format audio stream extraction with dynamic bitrate selection (High ~320 kbps, Standard ~128 kbps, Data Saver ~64 kbps), real-time size estimates, and Wi-Fi vs Cellular data saver integration.
-- **Offline-First Storage:** 3-tier cache hierarchy (L1 In-Memory, L2 Encrypted Hive Boxes, L3 Multi-Database Firestore) with background synchronization.
-- **Secret P2P Chat Protocol:** Isolated chat subsystem running on a dedicated secondary Firestore database (`databaseId: 'chat'`) with passcode-negotiated room verification.
-- **Hardware Integration:** Real-time beat-detection algorithm translating audio frequency spikes directly into physical camera flash strobe pulses.
-- **Dynamic Diagnostics & Self-Healing:** Monitors RAM, battery level, network latency, and cache limits, adapting sync intervals and thread pools dynamically.
+## 1. Project Overview
+Aura Player is an offline-first music streaming and discovery application engineered for zero audio latency, resilient multi-provider candidate retrieval, and uncompromised privacy. It features:
+- **Universal Multi-Provider Music Engine**: Retrieves search candidates concurrently across 8 sources (Local Storage, JioSaavn, Audius, Jamendo, Deezer, YouTube Data API backend proxy, Spotify, MongoDB Atlas Search).
+- **Aura Relevance & Ranking Pipeline**: A unified, provider-independent ranking formula combining Text Relevance (0.42), Popularity (0.14), User Affinity (0.15), Freshness (0.08), Trend (0.07), Intent (0.06), Language (0.04), and Version (0.04).
+- **Query Intelligence**: Devanagari & Bengali multilingual transliteration, spell correction, deterministic semantic entity extraction, and version intent classification.
+- **Audio Extraction & Multi-Tier Download**: Offline download with format choices (High ~320kbps, Medium ~128kbps, Data Saver ~64kbps).
+- **Decoupled Dual-Database Architecture**: Isolated primary Firestore DB for app config and user metadata, alongside an entirely separate database instance (`databaseId: 'chat'`) for private ephemeral direct messaging.
 
 ---
 
-## 🏗️ Architectural Principles & System Design
-
-The application follows Clean Architecture principles combined with an Event-Driven Engine Coordinator pattern:
+## 2. Architecture Diagram
 
 ```
-┌────────────────────────────────────────────────────────┐
-│                   Presentation Layer                   │
-│   (Screens, Riverpod Providers, Neumorphic/Glass UI)   │
-└───────────────────────────┬────────────────────────────┘
-                            │
-┌───────────────────────────▼────────────────────────────┐
-│                      Domain Layer                      │
-│     (Domain Services, Core Entities, Repositories)     │
-└───────────────────────────┬────────────────────────────┘
-                            │
-┌───────────────────────────▼────────────────────────────┐
-│                     Feature Engines                    │
-│    (Music Engines, Chat Engines, Admin ML Engines)     │
-└───────────────────────────┬────────────────────────────┘
-                            │
-┌───────────────────────────▼────────────────────────────┐
-│                   Core Infrastructure                  │
-│  (Kernel Boot, Sync Engine, Security, Task, Recovery)  │
-└───────────────────────────┬────────────────────────────┘
-                            │
-┌───────────────────────────▼────────────────────────────┐
-│                       Data Layer                       │
-│ (Remote Adapters, Local Hive DB, Dual Firestore DBs)   │
-└────────────────────────────────────────────────────────┘
-```
-
-### Key Subsystems:
-- **Dependency Injection:** Centralized [DependencyContainer](file:///d:/free_play/lib/core/di/dependency_container.dart) providing singleton and factory lifecycle resolution.
-- **Command & Event Bus:** [AppCommand](file:///d:/free_play/lib/core/commands/app_command.dart) pipeline synchronized via [AdaptiveSyncEngine](file:///d:/free_play/lib/core/sync/adaptive_sync_engine.dart) and broadcasted through [EventDispatcher](file:///d:/free_play/lib/core/events/event_dispatcher.dart).
-- **Fail-Closed Security Model:** Passcode and authorization rules check live Firestore instances via `Source.server` before access is granted.
-
----
-
-## 🗄️ Multi-Database Firestore Architecture
-
-Aura Player routes data across **two separate Cloud Firestore databases** within the same Firebase project:
-
-```
-                       ┌───────────────────────────────┐
-                       │      Firebase Project         │
-                       └──────┬─────────────────┬──────┘
-                              │                 │
-              ┌───────────────▼──┐           ┌──▼────────────────┐
-              │ Default Database │           │   Chat Database   │
-              │   ((default))    │           │ (databaseId: chat)│
-              └───────┬──────────┘           └──┬────────────────┘
-                      │                         │
-     ├── users/{uid}                            ├── live_users/{uid}
-     ├── users/{uid}/devices/{deviceId}         ├── direct_chats/{roomId}
-     ├── app_config/map_settings                └── direct_chats/{roomId}/messages/{msgId}
-     ├── ml_training/rules
-     └── pending_deliveries/{uid}
-```
-
-> **Important**: The Chat Service strictly connects to `FirebaseFirestore.instanceFor(app: Firebase.app(), databaseId: 'chat')`. This segregation protects chat metadata, session presence, and direct messages from general application operations.
-
----
-
-## 📁 Directory & File Structure
-
-```
-d:/free_play/
-├── .env / .env.example              # Environment variables & API keys
-├── pubspec.yaml                     # Dependencies & asset declarations
-├── firestore.rules                  # Firestore multi-database security rules
-├── lib/
-│   ├── main.dart                    # Application entry point & Flutter binding
-│   ├── web_stubs.dart               # Platform fallback stubs for web/desktop
-│   ├── config/                      # API keys & integration configurations
-│   │   ├── lastfm_config.dart
-│   │   └── spotify_config.dart
-│   ├── core/                        # Core infrastructure & engine kernel
-│   │   ├── cache/                   # Cache eviction engine & policies
-│   │   ├── capability/              # Device hardware & RAM capability profiler
-│   │   ├── commands/                # CQRS command patterns (Chat, Admin, App)
-│   │   ├── config/                  # Configuration registry & keys
-│   │   ├── constants/               # Global constants & dimensions
-│   │   ├── di/                      # Dependency injection service locator
-│   │   ├── events/                  # Event bus & domain event declarations
-│   │   ├── kernel/                  # Application bootstrap, engine coordinator, lifecycle
-│   │   ├── migration/               # Hive / database schema migration engine
-│   │   ├── network/                 # Network client wrappers & interceptors
-│   │   ├── permission/              # Role-based access control & permissions
-│   │   ├── provider/                # Core Riverpod & state management bridges
-│   │   ├── security/                # Security policy engines & encryption
-│   │   ├── services/                # Hardware beat detector & utilities
-│   │   ├── shared/                  # Error, Metrics, Recovery, Resource & Scheduler managers
-│   │   ├── sync/                    # Adaptive offline-first sync engine
-│   │   ├── task/                    # Background async task queue manager
-│   │   └── transaction/             # Atomic transaction coordinator
-│   ├── data/                        # Data access, datasources, models & services
-│   │   ├── datasources/             # Remote API clients & local Hive wrappers
-│   │   ├── models/                  # Freezed/JSON data transfer objects & entities
-│   │   ├── repositories/            # Implementation of domain repositories
-│   │   └── services/                # 31 specialized services (Audio, Chat, Search, etc.)
-│   ├── domain/                      # Domain business logic & contract definitions
-│   │   ├── entities/                # Core domain models
-│   │   ├── repositories/            # Repository contracts & interfaces
-│   │   └── services/                # Domain orchestrators (Playback, Conversation, Search, User)
-│   ├── features/                    # Feature engines & logic clusters
-│   │   ├── admin/                   # Analytics, Audit, Config, User Management, ML engines
-│   │   ├── chat/                    # Message, Presence, Cache, Conversation, Security engines
-│   │   └── music/                   # Playback, Queue, Download, Search Aggregator engines
-│   └── presentation/                # UI Presentation layer
-│       ├── providers/               # 17 Riverpod state notifiers & streams
-│       ├── screens/                 # 17 Complete application screens
-│       └── widgets/                 # 21 Reusable widgets (Visualizer, Mini Player, Lyrics, etc.)
+                              ┌────────────────────────────────────────────────────────┐
+                              │                     AURA PLAYER UI                     │
+                              │     (SearchScreen, FullPlayer, MiniPlayer, Console)    │
+                              └───────────────────────────┬────────────────────────────┘
+                                                          │
+                                                [ User Query Input ]
+                                                          │
+                                                          ▼
+                                            ┌───────────────────────────┐
+                                            │     QUERY INTELLIGENCE    │
+                                            │ • QueryNormalizer (NFKD)  │
+                                            │ • SpellCorrector          │
+                                            │ • TransliterationEngine   │
+                                            │ • QueryIntentDetector     │
+                                            │ • EntityExtractor         │
+                                            └─────────────┬─────────────┘
+                                                          │ ParsedQuery
+                                                          ▼
+                                            ┌───────────────────────────┐
+                                            │     SEARCH CACHE (L2)     │
+                                            │  Key: query|intent|lang   │
+                                            └──────┬─────────────┬──────┘
+                                    Cache HIT      │             │ Cache MISS
+                                  ┌────────────────┘             └────────────────┐
+                                  ▼                                               ▼
+                    ┌───────────────────────────┐                   ┌───────────────────────────┐
+                    │      CACHED RESPONSE      │                   │    CANDIDATE RETRIEVER    │
+                    │   (Fast Zero-Cost Path)   │                   │ (Parallel Resilient Pool) │
+                    └─────────────┬─────────────┘                   └─────────────┬─────────────┘
+                                  │                                               │
+                                  │       ┌─────────────────┬─────────────────┬───┴─────────────┬─────────────────┐
+                                  │       ▼                 ▼                 ▼                 ▼                 ▼
+                                  │   [ Local Hive ]   [ JioSaavn ]      [ Audius ]        [ Jamendo ]       [ Deezer ]
+                                  │   (Offline Songs)  (Stream API)     (Discovery API)   (CC Open Music)   (30s Preview)
+                                  │       │                 │                 │                 │                 │
+                                  │       ├─────────────────┴─────────────────┼─────────────────┴─────────────────┤
+                                  │       ▼                                   ▼                                   ▼
+                                  │   [ YouTube Proxy ]               [ Spotify API ]                    [ MongoDB Atlas ]
+                                  │   (Backend Server)                (Metadata Only)                    (Lucene Search)
+                                  │       │                                   │                                   │
+                                  │       └─────────────────┬─────────────────┴───────────────────────────────────┘
+                                  │                         │ SearchCandidate Stream
+                                  │                         ▼
+                                  │           ┌───────────────────────────┐
+                                  │           │      CANDIDATE MERGER     │
+                                  │           │ • Hard Irrelevant Filter  │
+                                  │           │ • Shorts/Reaction Filter  │
+                                  │           └─────────────┬─────────────┘
+                                  │                         │
+                                  │                         ▼
+                                  │           ┌───────────────────────────┐
+                                  │           │    CANONICAL DEDUP (L3)   │
+                                  │           │ • ISRC Match              │
+                                  │           │ • MusicBrainz Match       │
+                                  │           │ • Title+Artist+Duration   │
+                                  │           └─────────────┬─────────────┘
+                                  │                         │
+                                  │                         ▼
+                                  │           ┌───────────────────────────┐
+                                  │           │   AURA RELEVANCE RANKER   │
+                                  │           │ • Text Relevance (0.42)   │
+                                  │           │ • Popularity Log (0.14)   │
+                                  │           │ • Local Taste (0.15)      │
+                                  │           │ • Freshness Decay (0.08)  │
+                                  │           │ • Exact Match Boost       │
+                                  │           │ • Noise Penalties         │
+                                  │           └─────────────┬─────────────┘
+                                  │                         │
+                                  │                         ▼
+                                  │           ┌───────────────────────────┐
+                                  │           │    RESULT DIVERSIFIER     │
+                                  │           │ • Max 4 songs/artist      │
+                                  │           │ • Mix Official/Live/Remix │
+                                  │           └─────────────┬─────────────┘
+                                  │                         │
+                                  └────────────────► ◄──────┘
+                                                     │
+                                                     ▼
+                                      ┌───────────────────────────┐
+                                      │   SEARCH RESPONSE PACKET  │
+                                      │ • Ranked Results List     │
+                                      │ • Did You Mean Suggestion │
+                                      │ • Autocomplete Index      │
+                                      │ • Realtime Telemetry      │
+                                      └───────────────────────────┘
 ```
 
 ---
 
-## 🔄 End-to-End Functional Modules & Workflows
-
-### 1. Application Kernel & Multi-Phase Boot Sequence
-Coordinates the deterministic startup of all sub-systems across 4 isolated dependency phases to eliminate race conditions.
-
-```mermaid
-flowchart TD
-    Start[main.dart Launch] --> Boot[AuraApplication.bootstrap]
-    Boot --> Config[ConfigurationManager.init]
-    Config --> Auth[FirebaseAuth Anonymous Sign-In]
-    Auth --> Wait{Is Auth Ready?}
-    Wait -- Yes --> Register[AuraApplication._registerDependencies]
-    Wait -- No --> Fail[ErrorManager: Log Error & Halt]
-    Register --> DI[DependencyContainer Registry]
-    DI --> Coordinator[EngineCoordinator.initialize]
-    
-    subgraph Boot Phases
-        Coordinator --> P1[Phase 1: Scheduler, Error, Recovery, Resource, Migration, Task]
-        P1 --> P2[Phase 2: Metrics, Sync, Cache Eviction, Repos, Security, Capabilities, Transactions, Permissions]
-        P2 --> P3[Phase 3: Domain Services Registration]
-        P3 --> P4[Phase 4: Cache, Presence, Notification Engines]
-    end
-    
-    P4 --> StartEngines[EngineCoordinator.start]
-    StartEngines --> Lifecycle[LifecycleManager.startListening]
-    Lifecycle --> Ready[UI Displayed to User]
-```
-
-- **Primary Classes & Methods:**
-  - `AuraApplication.bootstrap()`: Initializes Flutter engine, Hive storage boxes, Firebase instances, and triggers Phase 1–4 engines.
-  - `EngineCoordinator.initialize()` & `EngineCoordinator.start()`: Sequentially boots and starts registered `IEngine` instances.
-  - `ConfigurationManager.init()`: Fetches settings from Firestore `app_config/map_settings` with failover to local Hive cache.
-
----
-
-### 2. User Registration, Authentication & Identity Discovery
-Implements frictionless anonymous authentication with dual-database user profile registration.
-
-```mermaid
-sequenceDiagram
-    participant User as Client App
-    participant Auth as Firebase Auth
-    participant Service as UserRegistrationService
-    participant DB1 as Default Firestore (users/{uid})
-    participant DB2 as Chat Firestore (live_users/{uid})
-    
-    User->>Auth: signInAnonymously()
-    Auth-->>User: UserCredential (UID)
-    User->>Service: registerUser(name, optionalPasscode)
-    Service->>DB1: Set users/{uid} (name, deviceId, platform, isAdmin: false)
-    Service->>DB1: Set users/{uid}/devices/{deviceId} (model, osVersion)
-    Service->>DB2: Set live_users/{uid} (name, status: "online", lastActive)
-    Service-->>User: Registration Complete
-```
-
-- **Primary Classes & Methods:**
-  - `UserRegistrationService.registerUser(String name, {String? passcode})`: Orchestrates dual-write registration across both databases.
-  - `UserRegistrationService.syncPresence({required bool isOnline, String? currentRoomId})`: Maintains real-time active status.
-  - `LocalChatService.getChatUsersOnce()`: Reads active users from both Firestore instances using `Source.server`, deduplicates by UID, and sorts online users first.
-
----
-
-### 3. Audio Streaming, Session Management & Background Playback
-A high-resilience audio engine supporting local and remote streams, queue management, lockscreen notification playback controls, and session guard tokens to prevent isolate crashes during rapid track switching.
-
-```mermaid
-flowchart TD
-    Tap[User Taps Song] --> PlaybackDS[PlaybackDomainService.trackPlaybackStart]
-    PlaybackDS --> PlaybackEng[PlaybackEngine.playTrack]
-    PlaybackEng --> SessionCheck[Increment _playSessionId]
-    SessionCheck --> StopPrior[Stop Active Player & Reset Subscriptions]
-    StopPrior --> SourceResolve{Is Song Downloaded?}
-    SourceResolve -- Yes --> LocalFile[AudioPlayer.setFilePath]
-    SourceResolve -- No --> RemoteUrl[AudioPlayer.setUrl]
-    LocalFile --> StartPlay[AudioPlayer.play]
-    RemoteUrl --> StartPlay
-    StartPlay --> UpdateHistory[Log to recentlyPlayed Box]
-    StartPlay --> UpdateMatrix[LocalTasteEngine.logTransition]
-    StartPlay --> AudioHandler[audio_service: Update Notification Tray]
-```
-
-- **Primary Classes & Methods:**
-  - `AudioPlayerHandler`: Custom `BaseAudioHandler` managing system audio focus, lockscreen media controls, and notification tray integration.
-  - `PlaybackEngine.playTrack(Song song)`: Dispatches play commands to the audio player handler.
-  - `AudioService.skipToNext()` / `AudioService.skipToPrevious()`: Advances or rewinds the active playback queue.
-  - `QueueManager`: Manages playlist queues, shuffle algorithms (Fisher-Yates), and repeat modes (`off`, `all`, `one`).
-
----
-
-### 4. Zero-Cost Multi-Provider Failover Search & YouTube-Style Intelligence
-Chains multiple search providers into a high-resiliency failover architecture, coupled with client-side typo tolerance, Firestore N-gram tokenization, and multi-factor YouTube relevance ranking.
+## 3. Folder Structure
 
 ```
-                       [Flutter App: Search Query Input]
-                                      │
-                         (Debounce 300ms + Local Cache Check)
-                                      │
-            ┌─────────────────────────┴─────────────────────────┐
-            ▼                                                   ▼
-   [Local Hive Cache Hit]                             [Local Hive Cache Miss]
-   (0ms Latency - 0 Cost)                                       │
-                                                                ▼
-                                                 [Tier 1: MongoDB Atlas Search]
-                                                 (Free M0 Cluster - Primary)
-                                                                │
-                                                     ┌──────────┴──────────┐
-                                                     ▼                     ▼
-                                                 (Success)              (Failure / Timeout 3s)
-                                                     │                     │
-                                                     ▼                     ▼
-                                              Return Results     [Tier 2: Algolia Free Tier]
-                                                                 (10k Search Quota - Secondary)
-                                                                           │
-                                                                 ┌─────────┴─────────┐
-                                                                 ▼                   ▼
-                                                             (Success)          (Failure / Timeout 3s)
-                                                                 │                   │
-                                                                 ▼                   ▼
-                                                          Return Results     [Tier 3: Client-Side Fuzzy Engine]
-                                                                             (100% Offline Hardware Fallback)
+free_play/
+├── .env.example                                  # Sanitized environment variable template
+├── pubspec.yaml                                  # Flutter dependencies & assets configuration
+├── functions/                                    # Firebase Cloud Functions (Node.js/TypeScript)
+├── youtube-extractor-microservice/               # Backend microservice (yt-dlp, YouTube API proxy)
+│   ├── server.js                                 # Express server with /api/search and /api/youtube
+│   └── package.json
+├── test/
+│   ├── fixtures/
+│   │   └── search_ranking_cases.json             # 100+ Golden test cases across multiple languages
+│   ├── core/search/
+│   │   ├── query_intelligence_test.dart          # Normalization, Spell, Intent, Transliteration tests
+│   │   ├── ranking_pipeline_test.dart            # Similarity, Exact Match Boost & Score bounds tests
+│   │   ├── deduplication_and_diversity_test.dart # Canonical resolver & diversifier tests
+│   │   ├── circuit_breaker_and_quota_test.dart   # Circuit breaker state & Quota store tests
+│   │   ├── autocomplete_and_cache_test.dart      # Autocomplete Trie & cache key tests
+│   │   └── golden_ranking_cases_test.dart        # Full 100+ query golden test runner
+│   ├── playlist_offline_and_mix_test.dart
+│   └── search_failover_test.dart
+└── lib/
+    ├── main.dart                                 # Application entry point
+    ├── core/
+    │   ├── constants/                            # App colors, styles, dimensions
+    │   ├── search/                               # Core Search Architecture
+    │   │   ├── models/
+    │   │   │   └── search_models.dart            # Canonical SearchCandidate, ParsedQuery, SearchRequest
+    │   │   ├── query/
+    │   │   │   ├── query_intelligence.dart       # Query intelligence orchestrator
+    │   │   │   ├── query_normalizer.dart         # NFKD, whitespace, punctuation, repetition compression
+    │   │   │   ├── spell_corrector.dart          # Dictionary, aliases, and trained corrections
+    │   │   │   ├── query_intent_detector.dart    # Intent detection with word boundaries
+    │   │   │   ├── query_expander.dart           # Synonym & transliteration expander
+    │   │   │   ├── transliteration_engine.dart   # Indic (Hindi/Bengali) <-> Latin transliteration
+    │   │   │   └── entity_extractor.dart         # Deterministic entity extraction
+    │   │   ├── providers/
+    │   │   │   ├── search_provider.dart          # SearchProviderClient interface
+    │   │   │   ├── provider_health.dart          # ProviderHealth & CircuitBreaker state
+    │   │   │   ├── local_search_provider.dart    # Offline songs, playlists, recently played
+    │   │   │   ├── audius_search_provider.dart   # Audius decentralized API client
+    │   │   │   ├── jamendo_search_provider.dart  # Jamendo CC music client
+    │   │   │   ├── jiosaavn_search_provider.dart # JioSaavn audio streaming client
+    │   │   │   ├── deezer_search_provider.dart   # Deezer metadata & preview client
+    │   │   │   ├── youtube_search_provider.dart  # Backend YouTube Data API proxy client
+    │   │   │   ├── spotify_search_provider.dart  # Spotify metadata discovery client
+    │   │   │   └── mongodb_search_provider.dart  # MongoDB Atlas Lucene search client
+    │   │   ├── ranking/
+    │   │   │   ├── string_similarity.dart        # Levenshtein, Jaro-Winkler, N-gram Dice, Jaccard
+    │   │   │   ├── ranking_features.dart         # Feature vector definitions
+    │   │   │   ├── feature_extractor.dart        # Extracts scoring features against ParsedQuery
+    │   │   │   ├── score_policy.dart             # Configurable ranking formula weights
+    │   │   │   ├── score_boosts.dart             # Exact title/artist/phrase boosts
+    │   │   │   ├── score_penalties.dart          # Reaction/shorts/unrelated demotions
+    │   │   │   └── aura_search_ranker.dart       # Core Aura Ranking Engine
+    │   │   ├── dedup/
+    │   │   │   ├── canonical_track_resolver.dart # Cross-provider identity resolver
+    │   │   │   └── search_deduplicator.dart      # Multi-provider candidate merger
+    │   │   ├── diversity/
+    │   │   │   └── result_diversifier.dart       # Anti-clustering & version balancer
+    │   │   ├── autocomplete/
+    │   │   │   ├── autocomplete_index.dart       # High-speed in-memory prefix Trie
+    │   │   │   ├── autocomplete_engine.dart      # Realtime local suggestions engine
+    │   │   │   └── did_you_mean_engine.dart      # Typo suggestion generator
+    │   │   ├── cache/
+    │   │   │   ├── search_cache_key.dart         # Composite structured cache key
+    │   │   │   └── search_cache.dart             # Hive-backed LRU/TTL search cache
+    │   │   ├── quota/
+    │   │   │   ├── provider_quota.dart           # Daily quota tracking & request costs
+    │   │   │   ├── quota_store.dart              # Persistent quota storage
+    │   │   │   └── quota_manager.dart            # Quota gatekeeper
+    │   │   ├── health/
+    │   │   │   ├── circuit_breaker.dart          # Resilient execution wrapper
+    │   │   │   └── provider_health_monitor.dart  # Realtime provider diagnostics monitor
+    │   │   ├── pipeline/
+    │   │   │   ├── candidate_retriever.dart      # Parallel provider execution pool
+    │   │   │   ├── candidate_merger.dart         # Hard filtering and candidate consolidation
+    │   │   │   └── search_pipeline.dart          # Master search pipeline coordinator
+    │   │   └── telemetry/
+    │   │       ├── search_metrics.dart           # Console & analytics logger
+    │   │       └── search_diagnostics.dart       # Developer/admin telemetry snapshots
+    ├── data/
+    │   ├── models/                               # Data models (SongModel, UserModel, RoomModel)
+    │   └── services/                             # AudioService, LocalTasteEngine, DirectJioSaavnService
+    ├── domain/
+    │   └── entities/                             # Song, Playlist, ChatMessage domain entities
+    └── presentation/
+        ├── providers/                            # Riverpod state providers (searchFailoverProvider)
+        ├── screens/                              # SearchScreen, FullPlayer, MainScreen, SecretConsole
+        └── widgets/                              # SongTile, FullPlayer, SkeletonShimmer
 ```
 
-#### YouTube-Style Relevance & Ranking Formula:
-Returned candidates are scored dynamically on the client using a multi-factor equation:
-$$\text{Final Score} = (\text{Text Similarity} \times 0.40) + (\text{Global Play Velocity} \times 0.30) + (\text{User Taste Affinity} \times 0.20) + (\text{Market Trend Boost} \times 0.10)$$
+---
 
-- **Primary Classes & Methods:**
-  - `FailoverSearchCoordinator`: Manages provider execution order `[MongoAtlasSearchProvider, AlgoliaSearchProvider, ClientSideFuzzySearchProvider]` with 3-second timeouts and telemetry event emission.
-  - `MongoAtlasSearchProvider`: Tier 1 Primary Cloud Search using MongoDB Atlas Apache Lucene autocomplete and fuzzy stages (`maxEdits: 2`).
-  - `AlgoliaSearchProvider`: Tier 2 Cloud Backup using Algolia REST API free quota.
-  - `ClientSideFuzzySearchProvider`: Tier 3 Absolute Fail-Safe executing Levenshtein distance & token overlap on local Hive boxes (0 cloud reads, 100% offline).
-  - `SearchCacheManager`: Key-value query caching in Hive (`search_cache_box`) with LRU eviction and 24-hour TTL (0ms latency, 0 cost).
-  - `NGramTokenizer`: Text normalization and prefix edge-gram generator (2-10 chars) for indexing records into Firestore `searchTokens` arrays.
-  - `StringSimilarity`: Implements Levenshtein Distance and Jaro-Winkler string similarity for typo tolerance.
-  - `YouTubeRelevanceRanker`: Multi-factor relevance scoring engine.
-  - `FirestoreCachedSearchService`: Debounced search service querying Firestore `array-contains` with client-side ranking.
-  - `SearchFailoverNotifier` / `searchFailoverProvider`: Riverpod state management driving the UI and `SearchTierIndicator` badges.
+## 4. Flutter App Architecture
+The client application leverages Flutter Riverpod with Clean Architecture principles:
+- **Presentation Layer**: Stateful widgets decoupled from networking logic. Reactive state watched via Riverpod Notifiers.
+- **Domain Layer**: Immutable business models (`Song`, `SearchCandidate`, `ParsedQuery`).
+- **Data Layer**: High-speed local persistence using Hive boxes, combined with Dio HTTP clients and background audio isolates (`just_audio`, `audio_service`).
 
 ---
 
-### 5. Offline-First Playlist Management & Sync Engine
-Enables instant local playlist modifications with guaranteed background synchronization.
-
-```mermaid
-flowchart LR
-    UserAction[Add/Remove Track from Playlist] --> HiveL2[Write to local userPlaylists Hive Box]
-    HiveL2 --> CommandCreate[Create UpdateSettingsCommand]
-    CommandCreate --> CommandQueue[Append to command_sync_queue Box]
-    CommandQueue --> SyncEngine[AdaptiveSyncEngine]
-    SyncEngine --> CheckNet{Internet Available?}
-    CheckNet -- Yes --> PushCloud[Persist to Firestore app_config/user playlists]
-    CheckNet -- No --> RetryLater[Exponential Backoff / Wait for Network Event]
-```
-
-- **Primary Classes & Methods:**
-  - `PlaylistProvider`: Riverpod `StateNotifier` managing active, custom, and favorite playlists.
-  - `AdaptiveSyncEngine.processQueue()`: Dequeues pending commands from Hive, executes remote transactions, and handles offline retry cycles.
-  - `AppCommandFactory.createCommand(type, payload)`: Serializes/deserializes command mutations for persistence.
+## 5. Search Architecture
+Search is architected around the **Candidate Retrieval & Ranking** paradigm:
+1. **Decoupled Retrieval vs Ranking**: Retrieval providers fetch candidates independently. A provider's internal rank never dictates the application's final order.
+2. **Provider Independence**: External JSON responses are immediately transformed into canonical `SearchCandidate` domain instances.
+3. **Resilience & Circuit Breakers**: If a remote provider times out (e.g. 4s) or returns 429/500 errors 5 consecutive times, its circuit trips to `OPEN`, immediately shielding subsequent searches from latency penalties until the 30-second cooldown expires.
 
 ---
 
-### 6. Multi-Format YouTube Import, Quality Selector & Offline Downloader
-Streams and downloads YouTube tracks with user-selected audio resolution and bitrate tiers, optimized for bandwidth and storage savings.
-
-```
-                  [Import YouTube Link / Playlist]
-                                 │
-                   (POST /api/youtube/extract)
-                                 │
-                 [Parse Multi-Format Audio Streams]
-             ┌───────────────────┼───────────────────┐
-             ▼                   ▼                   ▼
-      [High Quality]     [Standard Quality]   [Data Saver]
-       ~320 kbps m4a       ~128 kbps m4a      ~64 kbps m4a
-       (~9 MB/track)       (~3.8 MB/track)    (~1.9 MB/track)
-             └───────────────────┬───────────────────┘
-                                 │
-                     [User Selects Resolution]
-                   (Persist in user_settings_box)
-                                 │
-                   ┌─────────────┴─────────────┐
-                   ▼                           ▼
-          [Direct Streaming]          [Offline Download]
-      (LockCachingAudioSource)    (GET /api/youtube/download)
-                   │                           │
-                   ▼                           ▼
-      (Auto Data Saver on Mobile)  (Tag Bitrate into offline_songs)
-```
-
-- **Primary Classes & Methods:**
-  - `YouTubeExtractorService`: Dispatches multi-format extraction requests to the Node.js microservice and caches results in `yt_imports_cache`.
-  - `YouTubeAudioFormat`: Represents quality tiers, bitrates, format IDs (`140`, `139`, `249`), and estimated file sizes in MB.
-  - `QualitySettingsService`: Manages persistent user preferences in `user_settings_box` (`default_download_quality`, `data_saver_on_cellular`).
-  - `ImportLinkModal`: Interactive modal sheet with real-time bitrate selector cards and one-tap download/play actions.
-  - `DownloadService.downloadSong()`: Downloads binary streams with selected format IDs and tags bitrate metadata into `offline_songs` Hive box.
-  - `OfflineStorageService.downloadSong()`: Manages sandbox file storage, album art caching, and local library indexing.
-  - `AudioService`: Dynamically adapts streaming bitrates based on active network connection (Wi-Fi vs Cellular).
+## 6. Search Pipeline
+When a user types in the search box:
+1. **Debounce (300ms)**: Cancels intermediate keystrokes. Instant local autocomplete suggestions fire concurrently from the in-memory Trie index (<50ms).
+2. **Query Intelligence**: Normalizes text, corrects spelling, resolves Indic script transliterations (Devanagari/Bengali), detects query intent (`song`, `artist`, `album`, `live`, `remix`, `slowed`, `acoustic`), and extracts semantic entities.
+3. **Cache Lookup**: Checks the composite key `normalizedQuery|intent|language|region` in Hive. On a HIT, cached results are returned instantly (0 network cost).
+4. **Candidate Retrieval**: On a cache MISS, enabled providers are queried in parallel with bounded timeouts (Local, JioSaavn, Audius, Jamendo, Deezer, YouTube Backend Proxy, Spotify, MongoDB).
+5. **Candidate Merge & Hard Filtering**: Drops irrelevant results (reactions, podcasts, gameplay, trailers) unless explicitly requested.
+6. **Canonical Deduplication**: Merges tracks across providers by matching ISRC, MusicBrainz IDs, or Title + Artist + Duration.
+7. **Aura Relevance Ranking**: Scores candidates using the Aura Ranking Formula.
+8. **Result Diversification**: Prevents single-artist saturation and interleaves song versions.
+9. **Cache Write & Output**: Top results are persisted to Hive and emitted to UI.
 
 ---
 
-### 7. Secret Chat Room Connection & Passcode Handshake
-Enables isolated direct messaging channels over the secondary Firestore instance with custom passcodes.
+## 7. Provider List
 
-```mermaid
-sequenceDiagram
-    participant UserA as Sender (User A)
-    participant UserB as Recipient (User B)
-    participant RoomEng as ConversationEngine
-    participant ChatFS as Secondary Firestore (chat)
-    
-    UserA->>RoomEng: createRoom(targetUser: UserB, passcode: "8899")
-    RoomEng->>ChatFS: Create direct_chats/{roomId} (chatCode: "8899", status: "pending")
-    UserB->>ChatFS: Listen for incoming rooms where users contains UserB
-    ChatFS-->>UserB: New room detected (status: "pending")
-    UserB->>UserB: Prompt user for room passcode
-    UserB->>RoomEng: verifyRoom(roomId, enteredCode: "8899")
-    RoomEng->>ChatFS: Update direct_chats/{roomId} (status: "verified")
-    Note over UserA, UserB: Handshake Complete — Chat Room Activated
-```
-
-- **Primary Classes & Methods:**
-  - `ConversationEngine.createRoom(String targetUserId, String passcode)`: Instantiates a chat room document in `direct_chats/{roomId}` with `chatCodeStatus: "pending"`.
-  - `ConversationEngine.verifyRoom(String roomId, String passcode)`: Validates entered code and upgrades room status to `"verified"`.
-  - `ChatRoomScreen`: Handles live message streaming, chat encryption, and passcode entry.
+| Priority | Provider | Type | Output Capability | Free Allowance / Limits |
+|---|---|---|---|---|
+| 1 | **Local Cache & Storage** | Local Hive | Full Offline Streaming & Download | Unlimited (Local On-Device) |
+| 2 | **Audius** | Decentralized API | Full Track Streaming & Discovery | Free Tier (Host Discovery, ~10k req/day) |
+| 3 | **Jamendo** | Open CC API | Free CC Streaming & Download | Free Tier (Client ID required, ~10k req/day) |
+| 4 | **JioSaavn** | Stream API | Full Track Streaming (320kbps) | Unofficial Web API (Protected with Circuit Breaker) |
+| 5 | **Deezer** | Preview/Meta API | 30s High-Quality MP3 Preview & Meta | Free Tier (~50 req/5s rate limit) |
+| 6 | **YouTube** | Backend Data API Proxy | Full Search & yt-dlp Extraction | 10,000 units/day (100 units per search.list) |
+| 7 | **Spotify** | Web API | Rich Metadata & Recommendations | Free Developer Tier (Client Credentials) |
+| 8 | **MongoDB Atlas** | Lucene Search | Aura Owned Indexed Metadata | Free M0 Cluster (512MB storage) |
 
 ---
 
-### 8. Real-Time Chat Messaging, Soft-Deletes & Database Pruning
-Provides messaging capabilities including text editing, soft-deletion, starring, and automated lifecycle pruning.
-
-- **Primary Classes & Methods:**
-  - `MessageEngine.sendMessage(String roomId, String text)`: Dispatches messages to local L1 cache, L2 Hive, and enqueues `CreateMessageCommand`.
-  - `MessageEngine.deleteMessage(String roomId, String messageId)`: Executes soft-delete (`isDeleted: true`, text replaced with *"This message was deleted"*).
-  - `MessageEngine.pruneExpiredMessages(Duration expiry)`: Hourly cron job triggered by `SchedulerEngine` that archives or purges non-starred messages older than the retention threshold (default: 24h).
-
----
-
-### 9. Real-Time Presence & Focus Tracking Engine
-Monitors application lifecycle events to report active status and suppress redundant notification sounds.
-
-- **Primary Classes & Methods:**
-  - `LifecycleManager`: Listens to Flutter `AppLifecycleState` transitions (`resumed`, `paused`, `detached`).
-  - `PresenceEngine.pause()` / `PresenceEngine.resume()`: Updates `live_users/{uid}` in Chat Firestore (`status: "online"` vs `"offline"`, `lastActive`).
-  - `LocalChatService.updateCurrentRoom(String? roomId)`: Tracks the active chat screen to suppress incoming push notifications when the user is already viewing the conversation.
+## 8. Provider Responsibilities
+- **Local**: Instantly surfaces downloaded tracks, user playlist songs, and cached history without network access.
+- **Audius**: Provides legal independent and electronic music streaming with no user authentication required.
+- **Jamendo**: Delivers open-license Creative Commons tracks and verifies `audiodownload_allowed` before enabling offline downloads.
+- **JioSaavn**: Provides rich Bollywood, regional Indian, and global pop audio streams with dynamic authentication token generation.
+- **Deezer**: Acts as a metadata enricher and instant 30-second preview provider.
+- **YouTube (Backend)**: Operates server-side through `youtube-extractor-microservice` to protect API keys, providing YouTube Data API v3 search with yt-dlp fallback.
+- **Spotify**: Supplies album artwork, track popularity ratings, and recommendation seed vectors.
+- **MongoDB Atlas**: Runs full-text Lucene autocomplete and fuzzy search on Aura's own indexed song catalogue.
 
 ---
 
-### 10. Admin Console, Diagnostics & ML Training
-Provides system administration capabilities including metrics review, synonym dictionary training, user management, and passcode configuration.
-
-- **Primary Classes & Methods:**
-  - `SecurityEngine.validateAdminAccess(String passcode)`: Validates the entered admin password and checks `isAdmin: true` in the user's Firestore record.
-  - `SearchIntelligenceEngine.trainSynonym(String alias, String canonical)`: Registers search aliases in Hive and syncs rules to Firestore.
-  - `UserManagementEngine.deleteUser(String uid)`: Cascades user account deletion across `users/{uid}`, `pending_deliveries/{uid}`, and `live_users/{uid}`.
+## 9. Ranking Pipeline
+All retrieved candidates flow through a single ranking engine:
+- **Normalization**: Every candidate string and query term is stripped of punctuation, accents, and case differences.
+- **Feature Vector Extraction**: Features (`textRelevance`, `popularity`, `userAffinity`, `freshness`, `trend`, `intentMatch`, `languageMatch`, `versionMatch`, `exactBoost`, `penalty`) are extracted into `RankingFeatures`.
+- **Composite Score Calculation**: Evaluates the formula and clamps the score between `0.0` and `1.0`.
 
 ---
 
-### 11. Resource Manager, Hardware Adaptation & Cache Eviction
-Optimizes application performance based on available RAM, battery status, and network conditions.
+## 10. Ranking Formula
 
-- **Adaptive Sync Intervals:**
-  - **Wi-Fi:** 15 seconds
-  - **Cellular Data:** 45 seconds
-  - **Battery Saver Active:** 90 seconds
-- **Cache Eviction Tiers (P1 to P5):**
-  - **P1 (Active Chat):** Never evicted
-  - **P2 (Pinned Chats):** Never evicted
-  - **P3 (Starred Messages):** Never evicted
-  - **P4 (Archived Chats):** Eligible for eviction on low memory
-  - **P5 (Stale Messages > 7 Days):** Automatically purged when cache exceeds thresholds
+$$\text{FinalScore} = \sum (\text{Feature}_i \times \text{Weight}_i) + \text{ExactBoost} - \text{Penalty}$$
 
----
-
-### 12. Real-Time Hardware Strobe Light Beat Sync
-Translates audio frequency analysis into physical camera flashlight strobe pulses.
-
-```mermaid
-flowchart LR
-    AudioStream[Audio Frequency Stream] --> FFT[BeatDetector: 64-Band Simulation]
-    FFT --> BassCalc[Calculate Bass Energy: Bands 0-7]
-    BassCalc --> ThresholdCheck{Bass Energy > 0.6?}
-    ThresholdCheck -- Yes --> EmitBeat[Emit Beat Event to beatStream]
-    ThresholdCheck -- No --> Decay[Decay Energy Value]
-    EmitBeat --> TorchNotifier[TorchNotifier.onBeat]
-    TorchNotifier --> HardwareFlash[torch_light: Pulse Camera Flash 40-120ms]
-```
-
-- **Primary Classes & Methods:**
-  - `BeatDetector`: Processes audio playback position and generates simulated 64-band frequency arrays.
-  - `TorchNotifier.toggleBeatSync(bool enabled)`: Binds beat stream events to camera flashlight hardware pulses.
+### Configurable Weights:
+- **Text Relevance**: `0.42`
+  - Exact Title Match: `0.35`
+  - Title Similarity (Levenshtein + Jaro-Winkler): `0.20`
+  - Artist Match: `0.15`
+  - Token Overlap (Jaccard): `0.10`
+  - N-gram Dice Similarity: `0.10`
+  - Album Match: `0.05`
+- **Popularity** (Log-scaled): `0.14`
+- **User Taste & Affinity** (`LocalTasteEngine`): `0.15`
+- **Freshness** (Exponential age decay): `0.08`
+- **Trend Velocity**: `0.07`
+- **Intent Alignment**: `0.06`
+- **Language Match**: `0.04`
+- **Version Match**: `0.04`
 
 ---
 
-### 13. Synchronized Scrolling Lyrics Engine
-Retrieves time-stamped lyrics from multiple providers and syncs line highlighting to audio playback.
-
-- **Provider Fallback Chain:**
-  1. **LRCLIB (Primary):** Searches using track duration and title metadata.
-  2. **Lyrics.ovh:** Plain-text lyrics fallback.
-  3. **LyricaV2 (HuggingFace):** AI-extracted timestamped lyrics.
-  4. **Gaama Workers API:** Scraped and sanitized lyric streams.
-- **Primary Classes & Methods:**
-  - `LyricsService.fetchLyrics(String trackName, String artistName, {Duration? duration})`: Runs the fallback search chain and parses `[mm:ss.xx]` timestamps.
-  - `SynchronizedLyricsWidget`: Renders smooth auto-scrolling lyrics highlighted in real-time.
+## 11. Deduplication Strategy
+Candidate tracks are resolved into one logical song entity by `CanonicalTrackResolver`:
+1. **ISRC Match**: Exact 12-character international recording code.
+2. **MusicBrainz Identifier**: Recording/Release UUID cross-reference.
+3. **Normalized Title + Normalized Artist + Duration Bucket**: Matches tracks when artist is identical and duration is within $\pm 12$ seconds.
+4. **Different Artist Protection**: Tracks with the same title by different artists (e.g. *"Perfect"* by Ed Sheeran vs *"Perfect"* by Simple Plan) are **never** merged.
 
 ---
 
-### 14. Local Taste Engine & Recommendation Matrix
-Generates on-device personalized recommendations without tracking user data on external servers.
-
-- **Affinity Scoring Formula:**
-  - **Track Co-occurrence:** $+5.0$ per transition in `track_transitions` box.
-  - **Artist Affinity:** $+1.5$ if the artist is in the user's top 10 most-played.
-  - **Playlist Affinity:** $+3.0$ for Favorites, $+2.0$ for custom playlists.
-  - **Skip Penalty:** $-2.0$ for tracks skipped within the first 30 seconds.
-- **Primary Classes & Methods:**
-  - `LocalTasteEngine.logPlay(String trackId, String artistId)`: Updates listening history and artist play frequencies.
-  - `LocalTasteEngine.logTransition(String fromTrackId, String toTrackId)`: Updates track co-occurrence matrices.
-  - `MLRecommendationEngine.getRecommendations(String currentTrackId)`: Generates and ranks suggested tracks.
+## 12. Personalization Strategy
+Driven by the 100% on-device `LocalTasteEngine`:
+- **Transition Matrix**: Tracks transitions from song A to song B.
+- **Favorite Artists & Playlists**: Applies bounded affinity boost (+1.5 for top 10 played artists, +3.0 for favorite playlist songs).
+- **Critical Safety Guard**: Personalization only re-orders relevant candidates. It can never promote an irrelevant song to #1.
 
 ---
 
-### 15. Regional IP Geolocation & Search Localization
-Queries IP-based location data on startup to configure regional search filters.
-
-- **Primary Classes & Methods:**
-  - `IpLocationService.fetchLocation()`: Queries `http://ip-api.com/json/` for geographic coordinates and country codes.
-  - `HybridSearchService`: Uses location metadata to localize Spotify and regional music search results.
+## 13. Autocomplete Engine
+- **In-Memory Prefix Trie (`AutocompleteIndex`)**: Stores recent searches, favorite artists, top songs, and seed queries.
+- **Instant Response**: Evaluates local Trie queries in under 50ms without initiating external API calls.
+- **"Did You Mean?" Engine**: Checks queries against typo dictionaries, Indic transliterations, and trained synonyms, displaying formatted suggestion banners for misspelled queries.
 
 ---
 
-### 16. Push Notification & Event Dispatcher Engine
-Handles FCM token registration and silent background event processing.
-
-- **Primary Classes & Methods:**
-  - `FcmTokenService.init()`: Requests push permissions and registers the FCM token in `live_users/{uid}`.
-  - `NotificationEngine`: Listens to `MessageCreatedEvent` and triggers local sounds or badges.
-  - `EventDispatcher.dispatch(AppEvent event)`: Broadcasts events across application engines.
+## 14. Offline-First Behavior
+When network connectivity is unavailable:
+- Search automatically runs against Local Hive Cache (`offline_songs`, `recentlyPlayed`, `userPlaylists`).
+- Search UI displays a subtle offline banner without throwing fatal connection errors.
+- Songs stored locally remain 100% playable.
 
 ---
 
-### 17. Device Capability Profiling & Memory Scaling
-Profiles device RAM on launch to configure memory caches and search concurrency.
-
-- **Primary Classes & Methods:**
-  - `DeviceCapabilityEngine.initialize()`: Evaluates total RAM.
-  - **Low-Memory Profile (< 2GB RAM):** Cache limit set to 50 messages; search concurrency restricted to 1 thread.
-  - **Standard Profile (>= 2GB RAM):** Cache limit set to 200 messages; search concurrency allows up to 3 parallel threads.
+## 15. Cache Behavior & Hierarchy
+- **L1 Cache**: In-memory prefix Trie for autocomplete suggestions.
+- **L2 Cache**: Hive Box `aura_search_cache_v2` with LRU eviction (max 200 queries) and 24-hour TTL.
+- **L3 Cache**: Offline downloaded tracks stored in `offline_songs` box with file path bindings.
 
 ---
 
-## 💻 Complete Codebase Index
-
-### Core Services & Engines (`lib/data/services/` & `lib/features/`)
-
-| Class / Service Name | File Path | Key Functions & Responsibilities |
-| :--- | :--- | :--- |
-| `FailoverSearchCoordinator` | `lib/core/search/failover_search_coordinator.dart` | `executeSearch(query)` across MongoDB Atlas -> Algolia -> Local Fuzzy Engine with 3s timeouts. |
-| `FirestoreCachedSearchService` | `lib/core/search/services/firestore_cached_search_service.dart` | `debouncedSearch()`, `search()` with Hive cache checks and Firestore N-gram array-contains. |
-| `YouTubeRelevanceRanker` | `lib/core/search/ranking/youtube_relevance_ranker.dart` | `rank()` with 4-factor scoring (Text 0.40, Velocity 0.30, Taste 0.20, Trend 0.10). |
-| `NGramTokenizer` | `lib/core/search/normalization/ngram_tokenizer.dart` | `generateSearchTokens()`, `normalize()` for Firestore document indexing. |
-| `StringSimilarity` | `lib/core/search/ranking/string_similarity.dart` | `levenshteinSimilarity()`, `jaroWinkler()`, `fuzzyScore()` for typo tolerance. |
-| `SearchCacheManager` | `lib/core/search/search_cache_manager.dart` | `getCachedResults()`, `cacheResults()`, `clearCache()` in Hive `search_cache_box`. |
-| `QualitySettingsService` | `lib/data/services/quality_settings_service.dart` | `getPreferredDownloadQuality()`, `setPreferredDownloadQuality()`, `isDataSaverOnCellularEnabled()`. |
-| `YouTubeExtractorService` | `lib/data/services/youtube_extractor_service.dart` | `extractTrackWithFormats()`, `getDownloadUrl()`, `getFreshStreamUrl()` with multi-format audio tiers. |
-| `AudioPlayerHandler` | `lib/data/services/audio_service.dart` | `play()`, `pause()`, `stop()`, `skipToNext()`, `skipToPrevious()`, `seek()`, `_playSong()` with session-guard tokens. |
-| `HybridSearchService` | `lib/data/services/hybrid_search_service.dart` | `search(query)`, `getTrending()`, `getTopCharts()` aggregating JioSaavn, Spotify, and YouTube. |
-| `UserRegistrationService` | `lib/data/services/user_registration_service.dart` | `registerUser()`, `syncPresence()`, `getUserProfile()`, `ensureAdminFlag()`. |
-| `LocalChatService` | `lib/data/services/local_chat_service.dart` | `createChatRoom()`, `verifyChatRoom()`, `sendMessage()`, `getChatUsersOnce()`. |
-| `AdaptiveSyncEngine` | `lib/core/sync/adaptive_sync_engine.dart` | `enqueueCommand()`, `processQueue()`, `setSyncInterval()`, `onNetworkChanged()`. |
-| `LyricsService` | `lib/data/services/lyrics_service.dart` | `fetchLyrics()`, `_fetchFromLrcLib()`, `_fetchFromLyricsOvh()`, `_parseLrc()`. |
-| `LocalTasteEngine` | `lib/data/services/local_taste_engine.dart` | `logPlay()`, `logTransition()`, `logSkip()`, `calculateAffinityScore()`. |
-| `MLRecommendationEngine` | `lib/data/services/ml_recommendation_engine.dart` | `getRecommendations()`, `getSimilarArtists()`, `generateSmartQueue()`. |
-| `JioSaavnUnofficialApi` | `lib/data/services/jiosaavn_unofficial_api.dart` | `searchSongs()`, `getSongDetails()`, `getSongMediaUrl()`, `decryptUrl()`. |
-| `SpotifyService` | `lib/data/services/spotify_service.dart` | `authenticate()`, `searchTracks()`, `getPlaylistTracks()`, `getFeatured()`. |
-| `DownloadService` | `lib/data/services/download_service.dart` | `downloadSong()` with format/bitrate selection, `cancelDownload()`, `isSongDownloaded()`. |
-| `OfflineStorageService` | `lib/data/services/offline_storage_service.dart` | `downloadSong()`, `saveSongMetadata()`, `getDownloadedSongs()`, `deleteDownloadedSong()`. |
-| `SecurityEngine` | `lib/features/admin/engines/security_engine.dart` | `validateAdminAccess()`, `validateSecretConsolePasscode()`, `isCurrentUserAdmin()`. |
-| `SearchIntelligenceEngine` | `lib/features/admin/engines/search_intelligence_engine.dart` | `enhanceQuery()`, `trainSynonym()`, `getSynonymDictionary()`. |
-| `UserManagementEngine` | `lib/features/admin/engines/user_management_engine.dart` | `fetchAllUsers()`, `deleteUser()`, `setAdminFlag()`. |
-| `MessageEngine` | `lib/features/chat/engines/message_engine.dart` | `sendMessage()`, `deleteMessage()`, `starMessage()`, `pruneExpiredMessages()`. |
-| `ConversationEngine` | `lib/features/chat/engines/conversation_engine.dart` | `createRoom()`, `verifyRoom()`, `archiveRoom()`, `getRoomsStream()`. |
-| `CacheEvictionEngine` | `lib/core/cache/cache_eviction_engine.dart` | `runEviction()`, `evaluateCacheSize()`, `purgeStaleEntries()`. |
-| `BeatDetector` | `lib/core/services/beat_detector.dart` | `processAudioPosition()`, `getFrequencyBands()`, `beatStream`. |
+## 16. Quota Management
+`QuotaManager` enforces client-side and server-side rate-limiting:
+- **YouTube Data API**: 10,000 quota units/day (100 units/search). Avoids duplicate queries and stops additional calls when confident local results exist.
+- **Audius & Jamendo**: 10,000 requests/day bucket.
+- **JioSaavn**: Rate-limit protection with 5s timeout and circuit breaker fallback.
 
 ---
 
-### Presentation Screens (`lib/presentation/screens/`)
-
-| Screen File | Class Name | Purpose & Functionality |
-| :--- | :--- | :--- |
-| `main_screen.dart` | `MainScreen` | Root navigation container holding the BottomNavigationBar, FloatingMiniPlayer, and PageView controller. |
-| `home_screen.dart` | `HomeScreen` | Home feed with dynamic banners, quick picks, recently played carousels, and secret console entry points. |
-| `search_screen.dart` | `SearchScreen` | Multi-tier failover search interface with real-time badges, voice search, history, and filter chips. |
-| `library_screen.dart` | `LibraryScreen` | Offline songs with bitrate metadata, saved playlists, favorites, listening statistics, and admin portal access. |
-| `playlist_screen.dart` | `PlaylistScreen` | Playlist details, reorderable track list, offline sync status, and metadata editor. |
-| `chat_room_screen.dart` | `ChatRoomScreen` | End-to-end secret chat room with live messaging, passcode verification, message starring, and soft deletion. |
-| `secret_console_screen.dart` | `SecretConsoleScreen` | P2P direct messages manager, active conversations list, and new room creator. |
-| `visualizer_screen.dart` | `VisualizerScreen` | Real-time audio visualizer with multi-mode graphics and hardware strobe flashlight synchronization. |
-| `music_player_visualizer_screen.dart` | `MusicPlayerVisualizerScreen` | Full-screen player with integrated spectrum visualizer, queue drawer, and lyrics overlay. |
-| `local_music_screen.dart` | `LocalMusicScreen` | Local filesystem audio file browser with tag extraction and folder scanning. |
-| `manage_users_screen.dart` | `ManageUsersScreen` | Admin user manager for reviewing registered devices, granting admin privileges, and deleting accounts. |
-| `ml_training_screen.dart` | `MlTrainingScreen` | ML synonym training console, alias mapper, and search optimization dashboard. |
-| `secret_configuration_screen.dart` | `SecretConfigurationScreen` | Diagnostics and local device override settings (developer passcodes, database routing). |
-| `notification_settings_screen.dart` | `NotificationSettingsScreen` | Push notification preferences, sound alerts, and unread badge configuration. |
+## 17. Backend Architecture
+The backend microservice (`youtube-extractor-microservice/server.js`) runs an Express server:
+- **Endpoint 1: `GET /api/search/youtube`**: Executes YouTube Data API v3 searches server-side, falling back to `yt-dlp --flat-playlist` and JioSaavn fallback.
+- **Endpoint 2: `POST /api/youtube/extract`**: Multi-format audio stream extraction (High 320kbps, Medium 128kbps, Low 64kbps).
+- **Endpoint 3: `GET /api/youtube/download`**: Streams audio binaries directly with intact audio container headers.
 
 ---
 
-## 🌐 External APIs & Remote Data Sources
-
-```
-                     ┌──────────────────────────────────────┐
-                     │          Aura Player Engine          │
-                     └──────────────────┬───────────────────┘
-                                        │
-     ┌──────────────┬──────────────┬────┴─────────┬──────────────┬──────────────┐
-     │              │              │              │              │              │
-┌────▼────┐    ┌────▼────┐    ┌────▼────┐    ┌────▼────┐    ┌────▼────┐    ┌────▼────┐
-│JioSaavn │    │ Spotify │    │ Deezer  │    │ YouTube │    │ LRCLIB  │    │ IP-API  │
-│  API    │    │ Web API │    │ RapidAPI│    │ yt-dlp  │    │ Lyrics  │    │ Geodata │
-└─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘    └─────────┘
-```
-
-1. **JioSaavn Unofficial API:**
-   - Base Endpoints: `https://www.jiosaavn.com/api.php?__call=...`
-   - Operations: Song search, Album details, 320kbps MP4 decryptor, and Top Trending Charts.
-2. **Spotify Web API:**
-   - Base URL: `https://api.spotify.com/v1`
-   - Operations: Track search, Featured Playlists, New Releases, and Artist Discography.
-3. **LRCLIB Synchronized Lyrics:**
-   - Base URL: `https://lrclib.net/api`
-   - Operations: Synced line-by-line LRC timestamp search (`/api/get` or `/api/search`).
-4. **Lyrics.ovh:**
-   - Base URL: `https://api.lyrics.ovh/v1`
-   - Operations: Plain-text lyric fallback retrieval.
-5. **IP-API Geolocation:**
-   - Base URL: `http://ip-api.com/json/`
-   - Operations: Real-time region and coordinate lookup for localized music results.
-6. **YouTube Extractor Microservice (yt-dlp Node.js backend):**
-   - Endpoints: `POST /api/youtube/extract` (Multi-Format HQ/MQ/LQ parsing), `GET /api/youtube/download` (Bitrate binary stream).
-7. **Firebase Cloud Services:**
-   - Firebase Auth (Anonymous auth for device identity).
-   - Cloud Firestore (Dual-database: default app DB + custom chat DB).
-   - Firebase Cloud Messaging (Push notifications and silent events).
+## 18. YouTube API Integration & Security
+> [!IMPORTANT]
+> **API Key Protection**: YouTube API keys must **NEVER** be committed into git or hardcoded into Flutter client source code.
+- Keys are loaded from `process.env.YOUTUBE_API_KEY` on the backend server only.
+- Client requests go through the backend `/api/search/youtube` proxy.
 
 ---
 
-## 📊 Firestore Database Schemas & Data Models
+## 19. MongoDB Atlas Search Configuration
+For Aura-owned catalog indexing on MongoDB Atlas M0 cluster:
+- **Database**: `aura_music`
+- **Collection**: `songs`
+- **Search Index Name**: `search_index`
 
-### 1. Default Database (`(default)`)
-
-#### `users/{uid}`
+### Atlas Search Index Definition (JSON):
 ```json
 {
-  "uid": "abc123xyz",
-  "deviceId": "device_uuid_001",
-  "name": "Jane Doe",
-  "displayName": "Jane Doe",
-  "username": "Jane Doe",
-  "userName": "Jane Doe",
-  "isAdmin": false,
-  "userPasscode": "1234",
-  "chatPairs": ["peer_uid_456"],
-  "status": "online",
-  "lastActive": "2026-07-13T10:00:00Z",
-  "lastSeen": "2026-07-13T10:00:00Z",
-  "createdAt": "2026-07-01T12:00:00Z",
-  "appVersion": "1.0.0",
-  "platform": "android",
-  "fcmToken": "fcm_device_token_string"
-}
-```
-
-#### `users/{uid}/devices/{deviceId}`
-```json
-{
-  "deviceId": "device_uuid_001",
-  "platform": "android",
-  "appVersion": "1.0.0",
-  "model": "Pixel 8 Pro",
-  "osVersion": "Android 14",
-  "lastSeen": "2026-07-13T10:00:00Z"
-}
-```
-
-#### `app_config/map_settings`
-```json
-{
-  "creatorName": "Admin",
-  "adminPasscode": "AdminSecretPasscode",
-  "appLockPasscode": "LockPasscode",
-  "secretConsolePasscode": "ConsolePasscode",
-  "chatExpiryHours": 24,
-  "showContact": true,
-  "showLinkedin": true,
-  "contactNumber": "+1234567890",
-  "linkedinUrl": "https://linkedin.com/in/example"
-}
-```
-
----
-
-### 2. Chat Database (`databaseId: 'chat'`)
-
-#### `live_users/{uid}`
-```json
-{
-  "uid": "abc123xyz",
-  "name": "Jane Doe",
-  "status": "online",
-  "currentRoomId": "room_789",
-  "lastActive": "2026-07-13T10:00:00Z",
-  "fcmToken": "fcm_token_string"
-}
-```
-
-#### `direct_chats/{roomId}`
-```json
-{
-  "roomId": "room_789",
-  "users": ["user_a_uid", "user_b_uid"],
-  "chatCode": "9900",
-  "chatCodeStatus": "verified",
-  "chatCodeCreator": "user_a_uid",
-  "createdAt": "2026-07-13T09:30:00Z",
-  "lastMessage": "Hello there!",
-  "lastMessageTime": "2026-07-13T10:05:00Z",
-  "unreadCounts": {
-    "user_a_uid": 0,
-    "user_b_uid": 1
+  "mappings": {
+    "dynamic": false,
+    "fields": {
+      "title": [
+        {
+          "type": "autocomplete",
+          "analyzer": "lucene.standard",
+          "tokenization": "edgeGram",
+          "minGrams": 2,
+          "maxGrams": 15
+        },
+        {
+          "type": "string",
+          "analyzer": "lucene.standard"
+        }
+      ],
+      "artist": [
+        {
+          "type": "autocomplete",
+          "analyzer": "lucene.standard",
+          "tokenization": "edgeGram",
+          "minGrams": 2,
+          "maxGrams": 15
+        },
+        {
+          "type": "string",
+          "analyzer": "lucene.standard"
+        }
+      ],
+      "album": {
+        "type": "string",
+        "analyzer": "lucene.standard"
+      },
+      "popularity": {
+        "type": "number"
+      }
+    }
   }
 }
 ```
 
-#### `direct_chats/{roomId}/messages/{messageId}`
-```json
-{
-  "id": "msg_001",
-  "senderId": "user_a_uid",
-  "text": "Hello there!",
-  "timestamp": "2026-07-13T10:05:00Z",
-  "isDeleted": false,
-  "isStarred": false,
-  "isArchived": false,
-  "deliveryStatus": "delivered"
-}
-```
+---
+
+## 20. Firebase & Firestore Configuration
+- **Primary Database**: `(default)` — User profiles, system configuration, public playlists.
+- **Chat Database**: `databaseId: 'chat'` — Strictly isolated database instance for encrypted direct messaging and room handshakes. Do NOT merge this database.
 
 ---
 
-## ⚡ State Management & Riverpod Providers
-
-The presentation layer uses `flutter_riverpod` for declarative state management:
-
-- `searchFailoverProvider`: Riverpod `StateNotifierProvider` driving the multi-provider failover search pipeline (`idle`, `loading`, `success`, `fallbackActive`, `error`), latency tracking, and active tier indicator badges.
-- `searchCacheManagerProvider`: Provides singleton access to persistent Hive query caching.
-- `failoverCoordinatorProvider`: Coordinates failover execution across MongoDB Atlas, Algolia, and Local Fuzzy engines.
-- `audioPlayerProvider`: Exposes playback states (`playing`, `paused`, `buffering`, `completed`), track durations, and position streams.
-- `currentSongNotifierProvider`: Stores the active `Song` entity and triggers metadata updates.
-- `playlistProvider`: Manages user playlists, additions, removals, and reordering.
-- `historyProvider`: Maintains recent playback history and updates local taste models.
-- `lyricsProvider`: Fetches and syncs lyrics lines with current playback position.
-- `torchProvider`: Controls flashlight strobe synchronization and beat-detection listeners.
-- `lockProvider`: Handles application lock screens, biometrics, and passcode verification.
-- `syncProvider`: Exposes real-time sync engine statuses (`idle`, `syncing`, `offline`).
-- `themeProvider`: Provides dynamic theme switching (Dark Neumorphism, AMOLED Glass, Vibrant Gradient).
+## 21. Environment Variables
+Reference `.env.example` for all configurable keys. Never commit `.env` into git.
 
 ---
 
-## 📦 Local Storage & Hive Cache Hierarchy
-
-Aura Player utilizes Hive boxes for fast, encrypted on-device persistence:
-
-| Hive Box Name | Key / Schema Data | Purpose |
-| :--- | :--- | :--- |
-| `search_cache_box` | `Map<String, {timestamp, data: List<SongModel>}>` | 0ms latency, zero-cloud-cost search query cache with LRU eviction and 24h TTL. |
-| `yt_imports_cache` | `Map<String, YouTubeExtractionResult>` | Multi-format YouTube metadata, quality tiers, and audio streams. |
-| `user_settings_box` | `Map<String, dynamic>` | User preferences (`default_download_quality`, `data_saver_on_cellular`). |
-| `userPlaylists` | `Map<String, PlaylistModel>` | Offline-first custom user playlists. |
-| `recentlyPlayed` | `List<SongModel>` (Capped at 50) | Listening history for UI carousels and offline play. |
-| `offline_songs` | `Map<String, SongModel>` | Local file references and bitrate metadata for downloaded audio. |
-| `secure_chat_messages` | `Map<String, List<ChatMessageModel>>` | Encrypted chat history cache (L2 storage). |
-| `command_sync_queue` | `List<AppCommand>` | Queue for offline mutations waiting to sync to Firestore. |
-| `ml_training_box` | `Map<String, String>` (Alias -> Name) | Local search synonym dictionary for query enhancement. |
-| `listening_history` | `Map<String, int>` (Artist -> Count) | Artist play counter for affinity scoring. |
-| `track_transitions` | `Map<String, Map<String, int>>` | Co-occurrence transition matrix for recommendations. |
-| `skip_signals` | `Map<String, int>` (Track -> Skip Count) | Skip penalty signals for recommendation tuning. |
+## 22. Local Setup
+1. Clone the repository.
+2. Run Flutter dependencies:
+   ```bash
+   flutter pub get
+   ```
+3. Copy `.env.example` to `.env` and fill in necessary configuration parameters.
 
 ---
 
-## 🚀 Setup, Build & Environment Configuration
+## 23. Backend Setup
+1. Navigate to `youtube-extractor-microservice`:
+   ```bash
+   cd youtube-extractor-microservice
+   npm install
+   ```
+2. Start the server:
+   ```bash
+   npm start
+   ```
 
-### 1. Prerequisites
-- **Flutter SDK:** `>= 3.0.0 < 4.0.0`
-- **Dart SDK:** `>= 3.0.0`
-- **Android Target:** Min SDK `21`, Target SDK `34` (Android APK Only)
-- **Node.js:** `>= 18.0.0` (for YouTube Extractor Microservice)
-- **Firebase Project:** Configured with Firebase Auth & Cloud Firestore (with a secondary database named `chat`).
+---
 
-### 2. Environment Setup
-Create a `.env` file in the project root:
+## 24. Android Build Guide
+1. Ensure Android SDK 34+ and Flutter 3.x are installed.
+2. Build debug APK:
+   ```bash
+   flutter build apk --debug
+   ```
+3. Build release APK:
+   ```bash
+   flutter build apk --release
+   ```
 
-```ini
-# Live YouTube Extractor Microservice (Deployed on Render)
-YOUTUBE_EXTRACTOR_API_URL=https://player-wwrc.onrender.com
+---
 
-# Music API Configuration
-LASTFM_API_KEY=your_lastfm_api_key
-SPOTIFY_CLIENT_ID=your_spotify_client_id
-SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
-
-# Security Passcode Defaults (Overrides live in Firestore app_config/map_settings)
-ADMIN_PASSCODE=your_admin_passcode
-SECRET_CONSOLE_PASSCODE=your_secret_console_passcode
-```
-
-### 3. Installation & Run
+## 25. Testing Suite
+Run all automated tests:
 ```bash
-# 1. Install dependencies
-flutter pub get
-
-# 2. Run code generation (for Freezed & Riverpod models)
-flutter pub run build_runner build --delete-conflicting-outputs
-
-# 3. Launch application on Android device / emulator
-flutter run
+flutter test
 ```
-
-### 4. Production Android Build Commands
-- **Split ABI APKs (Recommended for smallest file size ~28-30MB):**
-  ```bash
-  flutter build apk --split-per-abi
-  ```
-  *Outputs:*
-  - `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk` (Modern 64-bit devices)
-  - `build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk` (Legacy 32-bit devices)
-  - `build/app/outputs/flutter-apk/app-x86_64-release.apk` (Emulators & tablets)
-
-- **Universal APK:**
-  ```bash
-  flutter build apk --release
-  ```
-
-- **Google Play App Bundle:**
-  ```bash
-  flutter build appbundle --release
-  ```
-
-### 5. Backend Extractor Microservice Load & Stress Testing
+Run search-specific ranking and pipeline tests:
 ```bash
-cd youtube-extractor-microservice
-npm install
-node test_live_backend.js
+flutter test test/core/search
 ```
 
 ---
 
-## 🛡️ Security, Concurrency & Stability Guarantees
-
-### 1. Audio Isolate Protection
-- **Session Guards:** Every audio operation assigns an incrementing `_playSessionId`. Asynchronous callbacks check session validity before modifying state, preventing race conditions during rapid track skipping.
-- **Microtask Decoupling:** Recursive skips use `Future.delayed(Duration(milliseconds: 600))` to avoid audio isolate stack overflows.
-
-### 2. Mutex Navigation Locks
-- Save operations in screens such as `SecretConfigurationScreen` utilize an `_isSaving` mutex flag combined with `PopScope(canPop: !_isSaving)` to prevent double-save crashes during screen exit.
-
-### 3. Fail-Closed Security Policy
-- Passcode validations for Admin screens, App Lock, and Secret Console query Firestore using `Source.server`. If network connectivity is unavailable, access is denied rather than falling back to insecure local defaults.
-
-### 4. Firestore Dual-Instance Segregation
-- The application isolates real-time chat data, presence signals, and direct messages inside a dedicated secondary Firestore database instance (`databaseId: 'chat'`), ensuring chat operations do not interfere with core music streaming features.
+## 26. Deployment Guide
+- **Backend Microservice**: Deploy `youtube-extractor-microservice` to Render, Railway, or Docker container.
+- **Firebase Functions**: Deploy via `firebase deploy --only functions`.
+- **Flutter Client**: Distribute generated release APK or upload App Bundle to Google Play Console.
 
 ---
 
-*Aura Player (`free_play`) — Designed and engineered for high-performance, ad-free music streaming and secure communication.*
+## 27. Troubleshooting & Diagnostics
+- **Search returns empty**: Verify network connection and backend microservice health (`GET /health`).
+- **Circuit Breaker tripped**: Check `ProviderHealthMonitor` diagnostics to inspect consecutive error reasons.
+- **YouTube download failed**: Ensure `yt-dlp` binary on the backend server is updated to the latest release.
+
+---
+
+## 28. Human / Manual Steps
+Certain actions cannot be performed autonomously by code and require manual web console configuration. See [Section 32: HUMAN ACTION REQUIRED Document](#32-human-action-required-document).
+
+---
+
+## 29. Known Limitations
+- Spotify Web API provides 30-second previews and metadata only (no full audio streaming via Web API).
+- Deezer API supports 30-second previews in non-partner regions.
+- JioSaavn unofficial endpoints may experience temporary throttling if queried without debouncing.
+
+---
+
+## 30. Cost & Free-Tier Assumptions
+
+| Service | Free Tier Allowance | Cost Risk |
+|---|---|---|
+| YouTube Data API v3 | 10,000 units/day free | Low (Free within daily quota) |
+| Audius API | Unlimited open access | Zero |
+| Jamendo API | Free Developer Tier | Zero |
+| Spotify Web API | Free Developer Tier | Zero |
+| MongoDB Atlas | M0 Cluster (512 MB storage) | Zero |
+| Render Web Service | Free Tier (750 hours/month) | Zero |
+| Firebase Firestore | Spark Plan (50k reads, 20k writes/day) | Zero |
+
+---
+
+## 31. Provider Policy & Licensing Cautions
+- Do not permanently store or mirror copyright audio on public cloud buckets.
+- Strictly adhere to Jamendo `audiodownload_allowed` flags for offline caching.
+- Do not use Spotify metadata to train public machine learning models.
+
+---
+
+## 32. HUMAN ACTION REQUIRED Document
+
+### A. ZERO-CODE / WEB CONSOLE ACTIONS
+1. **Google Cloud Console**:
+   - **WHERE**: https://console.cloud.google.com/apis/credentials
+   - **WHAT TO CLICK**: Create Credentials → API Key
+   - **WHAT TO CREATE**: Restrict key to *YouTube Data API v3*
+   - **WHAT VALUE TO ENTER**: "Aura Player YouTube API Key"
+   - **WHERE TO COPY**: Enter into backend `.env` as `YOUTUBE_API_KEY`
+   - **SECRET**: YES (Server-side only)
+   - **FREQUENCY**: Once
+
+### B. MONGODB ATLAS ACTIONS
+1. **MongoDB Atlas Console**:
+   - **WHERE**: https://cloud.mongodb.com/ → Database → Browse Collections
+   - **WHAT TO CLICK**: Search Indexes → Create Search Index → JSON Editor
+   - **WHAT VALUE TO ENTER**: Paste JSON definition from Section 19
+   - **INDEX NAME**: `search_index`
+   - **FREQUENCY**: Once per cluster
+
+### C. RENDER / BACKEND HOSTING ACTIONS
+1. **Render Dashboard**:
+   - **WHERE**: https://dashboard.render.com/
+   - **WHAT TO CLICK**: New Web Service → Connect repository (`youtube-extractor-microservice`)
+   - **ENVIRONMENT VARIABLES**: Set `PORT=3000`, `YOUTUBE_API_KEY=<key>`
+   - **FREQUENCY**: Once
+
+### D. PHYSICAL ANDROID DEVICE TEST CHECKLIST
+1. Install debug APK on physical Android device.
+2. Search query: `"arjit tum hi ho"` → Verify Arijit Singh *Tum Hi Ho* appears at #1.
+3. Search query: `"तुम ही हो"` (Hindi Devanagari) → Verify transliterated match.
+4. Toggle Airplane mode → Perform search → Verify local offline search banner and playback.
+5. Tap *Import Link* → Paste YouTube video link → Verify 3-tier format selection modal.

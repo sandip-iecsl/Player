@@ -42,6 +42,8 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
   bool _hasMoreResults = true;
   int _currentPage = 1;
   static const int _pageSize = 30;
+  String _selectedFilter = 'All';
+  final List<String> _filters = const ['All', 'Official', 'Remix', 'Live', 'Acoustic', 'Slowed'];
 
   @override
   void initState() {
@@ -556,7 +558,24 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
             }).toList();
             
             // Use paginated results if available, otherwise show initial results
-            final displayResults = _allResults.isNotEmpty ? _allResults : songs;
+            final baseResults = _allResults.isNotEmpty ? _allResults : songs;
+            
+            var displayResults = baseResults;
+            if (_selectedFilter == 'Remix') {
+              displayResults = baseResults.where((s) => s.title.toLowerCase().contains('remix') || s.title.toLowerCase().contains('mix') || s.title.toLowerCase().contains('mashup')).toList();
+            } else if (_selectedFilter == 'Live') {
+              displayResults = baseResults.where((s) => s.title.toLowerCase().contains('live') || s.title.toLowerCase().contains('concert') || s.title.toLowerCase().contains('unplugged')).toList();
+            } else if (_selectedFilter == 'Acoustic') {
+              displayResults = baseResults.where((s) => s.title.toLowerCase().contains('acoustic') || s.title.toLowerCase().contains('piano') || s.title.toLowerCase().contains('guitar')).toList();
+            } else if (_selectedFilter == 'Slowed') {
+              displayResults = baseResults.where((s) => s.title.toLowerCase().contains('slowed') || s.title.toLowerCase().contains('reverb') || s.title.toLowerCase().contains('lofi') || s.title.toLowerCase().contains('chill')).toList();
+            } else if (_selectedFilter == 'Official') {
+              displayResults = baseResults.where((s) => !s.title.toLowerCase().contains('remix') && !s.title.toLowerCase().contains('live') && !s.title.toLowerCase().contains('slowed')).toList();
+            }
+
+            if (displayResults.isEmpty && baseResults.isNotEmpty) {
+              displayResults = baseResults; // Fallback if filter leaves empty list
+            }
             
             debugPrint('[SearchScreen] Displaying ${displayResults.length} total results, loading more: $_isLoadingMore, has more: $_hasMoreResults');
 
@@ -567,7 +586,7 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(Icons.music_off_rounded, color: AppColors.textSecondary, size: 64),
-                    SizedBox(height: 16),
+                    const SizedBox(height: 16),
                     Text(
                       'No tracks found for "$_submittedQuery"',
                       style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold),
@@ -623,19 +642,49 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
               );
             }
 
-            return ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.only(bottom: 100, left: 16, right: 16, top: 16),
-              itemCount: displayResults.length + 1 + (_hasMoreResults ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index == displayResults.length + 1) {
-                  return const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 24.0),
-                    child: SkeletonShimmer(child: SkeletonSongTile()),
-                  );
-                }
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Filter Chips Bar
+                SizedBox(
+                  height: 38,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    itemCount: _filters.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (context, fIdx) {
+                      final f = _filters[fIdx];
+                      final isSel = _selectedFilter == f;
+                      return ChoiceChip(
+                        label: Text(f, style: TextStyle(color: isSel ? Colors.black : AppColors.textSecondary, fontSize: 12, fontWeight: isSel ? FontWeight.bold : FontWeight.w500)),
+                        selected: isSel,
+                        selectedColor: AppColors.neonPink,
+                        backgroundColor: AppColors.deepSpaceBlackLight,
+                        onSelected: (selected) {
+                          if (selected) {
+                            setState(() => _selectedFilter = f);
+                          }
+                        },
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: ListView.builder(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.only(bottom: 100, left: 16, right: 16, top: 8),
+                    itemCount: displayResults.length + 1 + (_hasMoreResults ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      if (index == displayResults.length + 1) {
+                        return const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24.0),
+                          child: SkeletonShimmer(child: SkeletonSongTile()),
+                        );
+                      }
 
-                final queryClean = _submittedQuery.toLowerCase().trim();
+                      final queryClean = _submittedQuery.toLowerCase().trim();
                 final isArtistSearch = displayResults.isNotEmpty && 
                     displayResults.take(3).every((s) => s.artist.toLowerCase().contains(queryClean));
 
@@ -681,7 +730,10 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
                   submittedQuery: _submittedQuery,
                 );
               },
-            );
+            ),
+          ),
+        ],
+      );
           },
           loading: () => ListView.builder(
             padding: const EdgeInsets.all(16),

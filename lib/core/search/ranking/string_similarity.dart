@@ -1,6 +1,6 @@
 import 'dart:math';
 
-/// String similarity algorithms for fuzzy matching and typo tolerance (Levenshtein & Jaro-Winkler)
+/// String similarity algorithms for fuzzy matching, typo tolerance, N-grams, and token overlap
 class StringSimilarity {
   /// Computes Levenshtein edit distance between two strings
   static int levenshteinDistance(String s, String t) {
@@ -98,7 +98,48 @@ class StringSimilarity {
     return (jaro + (prefixLen * p * (1.0 - jaro))).clamp(0.0, 1.0);
   }
 
-  /// Composite hybrid fuzzy score combining exact prefix, Jaro-Winkler, and token overlap
+  /// N-gram Dice coefficient similarity [0.0 - 1.0]
+  static double nGramSimilarity(String s1, String s2, {int n = 2}) {
+    if (s1 == s2) return 1.0;
+    if (s1.length < n || s2.length < n) {
+      return levenshteinSimilarity(s1, s2);
+    }
+
+    final s1Grams = <String, int>{};
+    for (int i = 0; i <= s1.length - n; i++) {
+      final gram = s1.substring(i, i + n);
+      s1Grams[gram] = (s1Grams[gram] ?? 0) + 1;
+    }
+
+    int intersection = 0;
+    int s2GramsCount = 0;
+    for (int i = 0; i <= s2.length - n; i++) {
+      final gram = s2.substring(i, i + n);
+      s2GramsCount++;
+      final count = s1Grams[gram] ?? 0;
+      if (count > 0) {
+        intersection++;
+        s1Grams[gram] = count - 1;
+      }
+    }
+
+    final totalGrams = (s1.length - n + 1) + s2GramsCount;
+    if (totalGrams == 0) return 0.0;
+    return ((2.0 * intersection) / totalGrams).clamp(0.0, 1.0);
+  }
+
+  /// Token overlap score (Jaccard on words)
+  static double tokenOverlapScore(String query, String target) {
+    final qTokens = query.toLowerCase().split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toSet();
+    final tTokens = target.toLowerCase().split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toSet();
+
+    if (qTokens.isEmpty || tTokens.isEmpty) return 0.0;
+    final intersection = qTokens.intersection(tTokens).length;
+    final union = qTokens.union(tTokens).length;
+    return (intersection / union).clamp(0.0, 1.0);
+  }
+
+  /// Composite hybrid fuzzy score combining exact prefix, Jaro-Winkler, and Levenshtein
   static double fuzzyScore(String query, String target) {
     final q = query.trim().toLowerCase();
     final t = target.trim().toLowerCase();
@@ -109,7 +150,8 @@ class StringSimilarity {
 
     final jw = jaroWinkler(q, t);
     final lev = levenshteinSimilarity(q, t);
+    final ngram = nGramSimilarity(q, t);
 
-    return max(jw, lev);
+    return max(jw, max(lev, ngram));
   }
 }

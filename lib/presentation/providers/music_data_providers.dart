@@ -1,9 +1,11 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/song.dart';
+import '../../core/search/models/search_models.dart';
 import '../../data/services/hybrid_search_service.dart';
 import '../../data/services/spotify_client_service.dart';
 import '../../data/services/local_taste_engine.dart';
 import 'history_provider.dart';
+import 'search_failover_provider.dart';
 
 // ─── Core Services ────────────────────────────────────────────────────────────
 
@@ -23,37 +25,23 @@ final spotifyServiceProvider = Provider<SpotifyClientService>((ref) {
 
 final searchSongsProvider = FutureProvider.family<List<Song>, String>((ref, query) async {
   if (query.trim().isEmpty) return [];
+  
+  try {
+    final pipeline = ref.read(searchPipelineProvider);
+    final response = await pipeline.execute(SearchRequest(
+      query: query,
+      limit: 30,
+    ));
+
+    if (response.songs.isNotEmpty) {
+      return response.songs;
+    }
+  } catch (e) {
+    // Fallback to hybrid search service if pipeline has unexpected exception
+  }
+
   final service = ref.read(hybridSearchServiceProvider);
   final results = await service.searchSongs(query, limit: 30);
-  
-  if (results.isEmpty) return results;
-
-  final lowerQuery = query.toLowerCase().trim();
-  
-  final tasteEngine = LocalTasteEngine();
-  tasteEngine.init();
-  final dummySeed = Song(id: '', title: '', artist: '', duration: Duration.zero);
-
-  // Sort exact matches to the top, and personalize the rest using taste engine affinity
-  results.sort((a, b) {
-    final aExactTitle = a.title.toLowerCase() == lowerQuery;
-    final bExactTitle = b.title.toLowerCase() == lowerQuery;
-    
-    if (aExactTitle && !bExactTitle) return -1;
-    if (!aExactTitle && bExactTitle) return 1;
-    
-    final aExactArtist = a.artist.toLowerCase() == lowerQuery;
-    final bExactArtist = b.artist.toLowerCase() == lowerQuery;
-    
-    if (aExactArtist && !bExactArtist) return -1;
-    if (!aExactArtist && bExactArtist) return 1;
-    
-    // Fallback: Sort by user's personalized affinity score
-    final aScore = tasteEngine.getAffinityScore(dummySeed, a);
-    final bScore = tasteEngine.getAffinityScore(dummySeed, b);
-    return bScore.compareTo(aScore);
-  });
-
   return results;
 });
 
