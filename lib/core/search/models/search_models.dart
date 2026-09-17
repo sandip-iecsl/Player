@@ -310,6 +310,16 @@ class SearchCandidate {
 
   /// Converts this SearchCandidate to standard Domain `Song`
   Song toSong() {
+    final directAudioStream = (previewUrl != null && previewUrl!.isNotEmpty && !previewUrl!.contains('youtube.com') && !previewUrl!.contains('youtu.be'))
+        ? previewUrl
+        : ((playableUrl != null && !playableUrl!.contains('youtube.com') && !playableUrl!.contains('youtu.be')) ? playableUrl : null);
+
+    final rawYtUrl = youtubeId != null
+        ? 'https://www.youtube.com/watch?v=$youtubeId'
+        : (playableUrl != null && (playableUrl!.contains('youtube.com') || playableUrl!.contains('youtu.be'))
+            ? playableUrl
+            : (previewUrl != null && (previewUrl!.contains('youtube.com') || previewUrl!.contains('youtu.be')) ? previewUrl : null));
+
     return Song(
       id: canonicalId,
       title: title,
@@ -317,11 +327,11 @@ class SearchCandidate {
       albumArt: artworkUrl,
       album: album,
       duration: duration,
-      youtubeUrl: youtubeId != null ? 'https://www.youtube.com/watch?v=$youtubeId' : null,
+      youtubeUrl: rawYtUrl,
       deezerUrl: deezerId,
-      previewUrl: previewUrl ?? playableUrl,
+      previewUrl: directAudioStream,
       language: language,
-      isYoutubeImport: youtubeId != null || sourceProvider == SearchProviderType.youtube,
+      isYoutubeImport: youtubeId != null || sourceProvider == SearchProviderType.youtube || rawYtUrl != null,
       bitrate: bitrate,
       formatId: audioFormat,
     );
@@ -329,6 +339,16 @@ class SearchCandidate {
 
   /// Converts this SearchCandidate to `SongModel`
   SongModel toSongModel() {
+    final directAudioStream = (previewUrl != null && previewUrl!.isNotEmpty && !previewUrl!.contains('youtube.com') && !previewUrl!.contains('youtu.be'))
+        ? previewUrl
+        : ((playableUrl != null && !playableUrl!.contains('youtube.com') && !playableUrl!.contains('youtu.be')) ? playableUrl : null);
+
+    final rawYtUrl = youtubeId != null
+        ? 'https://www.youtube.com/watch?v=$youtubeId'
+        : (playableUrl != null && (playableUrl!.contains('youtube.com') || playableUrl!.contains('youtu.be'))
+            ? playableUrl
+            : (previewUrl != null && (previewUrl!.contains('youtube.com') || previewUrl!.contains('youtu.be')) ? previewUrl : null));
+
     return SongModel(
       id: canonicalId,
       title: title,
@@ -336,11 +356,11 @@ class SearchCandidate {
       albumArt: artworkUrl,
       album: album,
       duration: duration,
-      youtubeUrl: youtubeId != null ? 'https://www.youtube.com/watch?v=$youtubeId' : null,
+      youtubeUrl: rawYtUrl,
       deezerUrl: deezerId,
-      previewUrl: previewUrl ?? playableUrl,
+      previewUrl: directAudioStream,
       language: language,
-      isYoutubeImport: youtubeId != null || sourceProvider == SearchProviderType.youtube,
+      isYoutubeImport: youtubeId != null || sourceProvider == SearchProviderType.youtube || rawYtUrl != null,
       bitrate: bitrate,
       formatId: audioFormat,
     );

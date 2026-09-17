@@ -317,7 +317,9 @@ class DirectJioSaavnService {
   /// Response structure: { "songs": [ { "id": "...", "more_info": { "encrypted_media_url": "..." } } ], "modules": {...} }
   Future<String?> getFreshStreamUrl(String songId) async {
     if (songId.isEmpty) return null;
-    debugPrint('[DirectJioSaavn] 🔄 Refreshing stream URL for song ID: $songId');
+    final cleanId = songId.replaceFirst('saavn_', '').replaceFirst('jiosaavn_', '').trim();
+    if (cleanId.isEmpty) return null;
+    debugPrint('[DirectJioSaavn] 🔄 Refreshing stream URL for song ID: $cleanId (input: $songId)');
     try {
       final response = await _dio.get(
         _baseUrl,
@@ -327,7 +329,7 @@ class DirectJioSaavnService {
           '_marker': '0',
           'api_version': '4',
           'ctx': 'web6dot0',
-          'pids': songId,
+          'pids': cleanId,
         },
         options: Options(
           responseType: ResponseType.plain,

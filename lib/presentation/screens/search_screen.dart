@@ -158,11 +158,11 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
   Future<void> _checkAndFallbackUnstreamableTracks() async {
     for (int i = 0; i < _allResults.length; i++) {
       final song = _allResults[i];
-      if (song.previewUrl == null || song.previewUrl!.startsWith('unstreamable')) {
-        debugPrint('[SearchScreen] 🔄 Firing background remix fallback for unstreamable track: ${song.title}');
+      if (song.previewUrl != null && song.previewUrl!.startsWith('unstreamable')) {
+        debugPrint('[SearchScreen] 🔄 Firing background fallback for unstreamable track: ${song.title}');
         try {
           final searchService = HybridSearchService();
-          final fallbackQuery = '${song.title} ${song.artist} remix';
+          final fallbackQuery = '${song.title} ${song.artist}';
           final results = await searchService.searchSongs(fallbackQuery, limit: 3);
           
           final validFallback = results.where((s) => s.previewUrl != null && !s.previewUrl!.startsWith('unstreamable')).toList();
@@ -172,7 +172,7 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
               setState(() {
                 _allResults[i] = validFallback.first;
               });
-              debugPrint('[SearchScreen] ✅ Unstreamable track replaced with remix fallback!');
+              debugPrint('[SearchScreen] ✅ Unstreamable track replaced with valid fallback!');
             }
           }
         } catch (_) {}
@@ -936,7 +936,12 @@ class _SearchSongTileState extends ConsumerState<SearchSongTile> {
 
   @override
   Widget build(BuildContext context) {
-    final isAvailable = widget.song.previewUrl != null && widget.song.previewUrl!.isNotEmpty;
+    final isAvailable = (widget.song.previewUrl != null &&
+            widget.song.previewUrl!.isNotEmpty &&
+            !widget.song.previewUrl!.startsWith('unstreamable')) ||
+        widget.song.isYoutubeImport ||
+        widget.song.youtubeUrl != null ||
+        widget.song.id.isNotEmpty;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

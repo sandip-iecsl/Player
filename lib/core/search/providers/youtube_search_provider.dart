@@ -101,7 +101,8 @@ class YouTubeSearchProvider implements SearchProviderClient {
               popularityScore: viewCount != null ? _calcViewPopularity(viewCount) : 0.6,
               publishedAt: item['publishedAt'] != null ? DateTime.tryParse(item['publishedAt'].toString()) : null,
               artworkUrl: thumbnail,
-              playableUrl: item['streamUrl']?.toString() ?? 'https://www.youtube.com/watch?v=$ytId',
+              playableUrl: item['streamUrl']?.toString(),
+              previewUrl: item['streamUrl']?.toString(),
               isDownloadable: true,
               audioFormat: item['format']?.toString() ?? 'm4a',
               bitrate: item['bitrate']?.toString() ?? '320 kbps',
@@ -109,6 +110,7 @@ class YouTubeSearchProvider implements SearchProviderClient {
                 'provider': 'youtube',
                 'id': ytId,
                 'channel': item['channelTitle'],
+                'youtube_url': 'https://www.youtube.com/watch?v=$ytId',
               },
               matchedProviders: [SearchProviderType.youtube],
             ));

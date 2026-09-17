@@ -746,10 +746,8 @@ class AudioServiceHandler extends BaseAudioHandler {
     if (songs.isEmpty) return;
     _context = _inferContext(songs, context);
 
-    // Spotify/JioSaavn Auto-Shuffle Logic
-    // If playing from Search or Radio, auto-enable shuffle.
-    // If playing from Playlist, Album, or Local, auto-disable shuffle.
-    if (_context == PlaybackContext.search || _context == PlaybackContext.radio) {
+    // Maintain sequential playback order for search results, playlists, albums, and local tracks
+    if (_context == PlaybackContext.radio) {
       _shuffleMode = AudioServiceShuffleMode.all;
     } else {
       _shuffleMode = AudioServiceShuffleMode.none;
@@ -763,7 +761,7 @@ class AudioServiceHandler extends BaseAudioHandler {
       ..clear()
       ..addAll(songs);
     
-    // Apply shuffle if it's already enabled
+    // Apply shuffle if it's explicitly enabled
     if (_shuffleMode == AudioServiceShuffleMode.all) {
       print('[Audio] 🔀 Auto-Shuffle is ON for ${_context.name} context');
       final currentSong = songs[startIndex];
@@ -1062,32 +1060,83 @@ class AudioServiceHandler extends BaseAudioHandler {
         String? audioUrl = OfflineStorageService.getLocalPath(song.id) ??
           _warmedStreamUrls[song.id] ?? song.previewUrl;
 
-      // Dynamically fetch missing or unstreamable URL
-      if ((audioUrl == null || audioUrl.isEmpty || audioUrl.startsWith('unstreamable')) && song.id.isNotEmpty) {
-        if (song.isYoutubeImport || song.id.startsWith('yt_') || song.youtubeUrl != null) {
+      final bool isYt = song.isYoutubeImport ||
+          song.id.startsWith('yt_') ||
+          song.youtubeUrl != null ||
+          (audioUrl != null && (audioUrl.contains('youtube.com') || audioUrl.contains('youtu.be')));
+
+      final bool isMissingOrUnstreamable = audioUrl == null ||
+          audioUrl.isEmpty ||
+          audioUrl.startsWith('unstreamable') ||
+          (isYt && (audioUrl.contains('youtube.com') || audioUrl.contains('youtu.be')));
+
+      // Dynamically resolve missing or unstreamable URL
+      if (isMissingOrUnstreamable && song.id.isNotEmpty) {
+        if (isYt) {
           print('[Audio] 🎬 Extracting YouTube stream URL for "${song.title}"...');
           try {
             final ytFreshUrl = await _ytExtractor.getFreshStreamUrl(song);
-            if (ytFreshUrl != null && ytFreshUrl.isNotEmpty) {
+            if (ytFreshUrl != null && ytFreshUrl.isNotEmpty && !ytFreshUrl.contains('youtube.com') && !ytFreshUrl.contains('youtu.be')) {
               audioUrl = ytFreshUrl;
               _warmedStreamUrls[song.id] = ytFreshUrl;
               if (_currentIndex >= 0 && _currentIndex < _queue.length) {
                 _queue[_currentIndex] = _queue[_currentIndex].copyWith(previewUrl: ytFreshUrl);
               }
             }
-          } catch (_) {}
-        } else {
-          print('[Audio] 🔗 No valid URL for "${song.title}". Fetching fresh stream URL...');
+          } catch (ytErr) {
+            print('[Audio] ⚠️ YouTube extraction error: $ytErr');
+          }
+        }
+
+        // Try JioSaavn direct PID lookup if song has saavn prefix or numeric ID
+        if (audioUrl == null || audioUrl.isEmpty || audioUrl.startsWith('unstreamable') || audioUrl.contains('youtube.com') || audioUrl.contains('youtu.be')) {
+          final cleanSaavnId = song.id.replaceFirst('saavn_', '').replaceFirst('jiosaavn_', '');
+          if (RegExp(r'^\d+$').hasMatch(cleanSaavnId) || song.id.startsWith('saavn_')) {
+            print('[Audio] 🔗 Refreshing JioSaavn stream URL for "${song.title}" ($cleanSaavnId)...');
+            try {
+              final freshUrl = await _directService.getFreshStreamUrl(cleanSaavnId);
+              if (freshUrl != null && freshUrl.isNotEmpty) {
+                audioUrl = freshUrl;
+                _warmedStreamUrls[song.id] = freshUrl;
+                if (_currentIndex >= 0 && _currentIndex < _queue.length) {
+                  _queue[_currentIndex] = _queue[_currentIndex].copyWith(previewUrl: freshUrl);
+                }
+              }
+            } catch (_) {}
+          }
+        }
+
+        // Universal Resolver: For metadata-only tracks (Spotify, Deezer, MongoDB) or failed extractions
+        if (audioUrl == null || audioUrl.isEmpty || audioUrl.startsWith('unstreamable') || audioUrl.contains('youtube.com') || audioUrl.contains('youtu.be')) {
+          print('[Audio] 🔍 Universal Resolver: Locating audio stream for "${song.title}" by ${song.artist}...');
           try {
-            final freshUrl = await _directService.getFreshStreamUrl(song.id);
-            if (freshUrl != null && freshUrl.isNotEmpty) {
-              audioUrl = freshUrl;
-              // Update queue so re-queued retries or syncs have it
+            final jioMatches = await _directService.searchSongs('${song.title} ${song.artist}', limit: 2);
+            if (jioMatches.isNotEmpty && jioMatches.first.previewUrl != null && jioMatches.first.previewUrl!.isNotEmpty) {
+              final resolvedUrl = jioMatches.first.previewUrl!;
+              audioUrl = resolvedUrl;
+              _warmedStreamUrls[song.id] = resolvedUrl;
               if (_currentIndex >= 0 && _currentIndex < _queue.length) {
-                _queue[_currentIndex] = _queue[_currentIndex].copyWith(previewUrl: freshUrl);
+                _queue[_currentIndex] = _queue[_currentIndex].copyWith(previewUrl: resolvedUrl);
+              }
+              print('[Audio] ✅ Universal Resolver: Resolved via JioSaavn for "${song.title}"');
+            } else {
+              final ytResult = await _ytExtractor.extractTrack('${song.title} ${song.artist}');
+              if (ytResult != null && ytResult.previewUrl != null && ytResult.previewUrl!.isNotEmpty && !ytResult.previewUrl!.contains('youtube.com')) {
+                final resolvedUrl = ytResult.previewUrl!;
+                audioUrl = resolvedUrl;
+                _warmedStreamUrls[song.id] = resolvedUrl;
+                if (_currentIndex >= 0 && _currentIndex < _queue.length) {
+                  _queue[_currentIndex] = _queue[_currentIndex].copyWith(
+                    previewUrl: resolvedUrl,
+                    youtubeUrl: ytResult.youtubeUrl,
+                  );
+                }
+                print('[Audio] ✅ Universal Resolver: Resolved via YouTube for "${song.title}"');
               }
             }
-          } catch (_) {}
+          } catch (resErr) {
+            print('[Audio] ⚠️ Universal Resolver error: $resErr');
+          }
         }
       }
 
@@ -1097,9 +1146,9 @@ class AudioServiceHandler extends BaseAudioHandler {
         return;
       }
 
-      if (audioUrl != null && audioUrl.isNotEmpty) {
+      if (audioUrl != null && audioUrl.isNotEmpty && !audioUrl.contains('youtube.com') && !audioUrl.contains('youtu.be')) {
         try {
-          // Local file path (from on_audio_query) — use file URI directly
+          // Local file path (from on_audio_query or offline storage) — use file URI directly
           if (!audioUrl.startsWith('http')) {
             print('[Audio] 📁 Playing local file: $audioUrl');
             await _audioPlayer.setAudioSource(AudioSource.uri(Uri.file(audioUrl)));
@@ -1112,17 +1161,20 @@ class AudioServiceHandler extends BaseAudioHandler {
             return;
           }
 
-          // CDN-compatible browser headers — saavncdn.com blocks requests without
-          // a proper browser User-Agent and Referer from jiosaavn.com
-          final cdnHeaders = (song.isYoutubeImport || song.id.startsWith('yt_'))
-              ? <String, String>{
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                }
-              : <String, String>{
-                  'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                  'Referer': 'https://www.jiosaavn.com/',
-                  'Origin': 'https://www.jiosaavn.com',
-                };
+          // Dynamic CDN-compatible browser headers
+          Map<String, String>? cdnHeaders;
+          if (audioUrl.contains('saavn') || audioUrl.contains('jio')) {
+            cdnHeaders = <String, String>{
+              'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+              'Referer': 'https://www.jiosaavn.com/',
+              'Origin': 'https://www.jiosaavn.com',
+            };
+          } else {
+            cdnHeaders = <String, String>{
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            };
+          }
+
           if (_playSessionId != currentSession) {
             print('[Audio] ℹ️ Play session changed before setUrl(), aborting');
             return;
@@ -1131,10 +1183,18 @@ class AudioServiceHandler extends BaseAudioHandler {
           if (sourceUri == null || !sourceUri.hasScheme || sourceUri.host.isEmpty) {
             throw const FormatException('Invalid remote audio URL');
           }
-          print('[Audio] ▶️ Using LockCachingAudioSource with headers for: $audioUrl');
-          await _audioPlayer.setAudioSource(
-            LockCachingAudioSource(sourceUri, headers: cdnHeaders),
-          );
+          print('[Audio] ▶️ Setting audio source for: $audioUrl');
+          try {
+            await _audioPlayer.setAudioSource(
+              LockCachingAudioSource(sourceUri, headers: cdnHeaders),
+            );
+          } catch (cacheErr) {
+            print('[Audio] ⚠️ LockCachingAudioSource exception ($cacheErr), falling back to AudioSource.uri...');
+            await _audioPlayer.setAudioSource(
+              AudioSource.uri(sourceUri, headers: cdnHeaders),
+            );
+          }
+
           if (_playSessionId != currentSession) {
             print('[Audio] ℹ️ Play session changed, aborting playback');
             return;
@@ -1184,13 +1244,17 @@ class AudioServiceHandler extends BaseAudioHandler {
             await Future.delayed(const Duration(milliseconds: 1500));
             if (_playSessionId != currentSession) return;
             try {
-              const cdnHeaders = {
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                'Referer': 'https://www.jiosaavn.com/',
-                'Origin': 'https://www.jiosaavn.com',
-              };
+              final cdnHeaders = (audioUrl.contains('saavn') || audioUrl.contains('jio'))
+                  ? {
+                      'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                      'Referer': 'https://www.jiosaavn.com/',
+                      'Origin': 'https://www.jiosaavn.com',
+                    }
+                  : {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    };
               await _audioPlayer.setAudioSource(
-                LockCachingAudioSource(Uri.parse(audioUrl), headers: cdnHeaders),
+                AudioSource.uri(Uri.parse(audioUrl), headers: cdnHeaders),
               );
               if (_playSessionId != currentSession) return;
               await _audioPlayer.play();
@@ -1207,14 +1271,14 @@ class AudioServiceHandler extends BaseAudioHandler {
             // Retry the same song with the fresh player
             print('[Audio] 🔁 Retrying "${song.title}" with fresh player...');
             try {
-              final cdnHeaders = (song.isYoutubeImport || song.id.startsWith('yt_'))
-                  ? <String, String>{
-                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                    }
-                  : <String, String>{
+              final cdnHeaders = (audioUrl.contains('saavn') || audioUrl.contains('jio'))
+                  ? {
                       'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
                       'Referer': 'https://www.jiosaavn.com/',
                       'Origin': 'https://www.jiosaavn.com',
+                    }
+                  : {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                     };
               if (audioUrl.startsWith('http')) {
                 await _audioPlayer.setUrl(audioUrl, headers: cdnHeaders);
@@ -1234,7 +1298,7 @@ class AudioServiceHandler extends BaseAudioHandler {
             print('[Audio] 🔗 YouTube stream URL expired (403/410/Source error). Re-extracting for: ${song.title}...');
             try {
               final freshUrl = await _ytExtractor.getFreshStreamUrl(song);
-              if (freshUrl != null && freshUrl.isNotEmpty) {
+              if (freshUrl != null && freshUrl.isNotEmpty && !freshUrl.contains('youtube.com')) {
                 print('[Audio] ✅ Got fresh YouTube stream URL. Updating queue + retrying...');
                 if (_playSessionId != currentSession) return;
 
@@ -1243,7 +1307,7 @@ class AudioServiceHandler extends BaseAudioHandler {
                 }
 
                 await _audioPlayer.setAudioSource(
-                  LockCachingAudioSource(Uri.parse(freshUrl)),
+                  AudioSource.uri(Uri.parse(freshUrl)),
                 );
                 if (_playSessionId != currentSession) return;
                 await _audioPlayer.play();
@@ -1263,8 +1327,6 @@ class AudioServiceHandler extends BaseAudioHandler {
                 print('[Audio] ✅ Got fresh URL. Updating queue + retrying...');
                 if (_playSessionId != currentSession) return;
 
-                // Persist the fresh URL into the queue so re-queued retries
-                // don't hit the same expired CDN token again
                 if (_currentIndex < _queue.length) {
                   _queue[_currentIndex] = _queue[_currentIndex].copyWith(previewUrl: freshUrl);
                 }
@@ -1292,11 +1354,15 @@ class AudioServiceHandler extends BaseAudioHandler {
               print('[Audio] 🔄 Fallback: trying AudioSource.uri with headers...');
               await _audioPlayer.stop();
               await Future.delayed(const Duration(milliseconds: 50));
-              const cdnHeaders = {
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
-                'Referer': 'https://www.jiosaavn.com/',
-                'Origin': 'https://www.jiosaavn.com',
-              };
+              final cdnHeaders = (audioUrl.contains('saavn') || audioUrl.contains('jio'))
+                  ? {
+                      'User-Agent': 'Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36',
+                      'Referer': 'https://www.jiosaavn.com/',
+                      'Origin': 'https://www.jiosaavn.com',
+                    }
+                  : {
+                      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                    };
               await _audioPlayer.setAudioSource(
                 AudioSource.uri(Uri.parse(audioUrl), headers: cdnHeaders),
               );
@@ -1312,7 +1378,7 @@ class AudioServiceHandler extends BaseAudioHandler {
           }
         }
       } else {
-        print('[Audio] ⚠️ No audio URL found for this song');
+        print('[Audio] ⚠️ No valid audio URL could be resolved for this song');
         // Explicitly handle unstreamable track by skipping it
         _consecutiveFailures++;
         if (_consecutiveFailures >= 2) {
