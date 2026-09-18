@@ -18,7 +18,7 @@ subprojects {
     project.plugins.withId("com.android.library") {
         project.android {
             if (namespace == null) {
-                namespace = "com.aura.player.${project.name.replaceAll(":", "_").replaceAll("-", "_")}"
+                namespace = "com.example.free_play.${project.name.replaceAll(":", "_").replaceAll("-", "_")}"
             }
             compileOptions {
                 sourceCompatibility JavaVersion.VERSION_1_8
@@ -29,7 +29,7 @@ subprojects {
     project.plugins.withId("com.android.application") {
         project.android {
             if (namespace == null) {
-                namespace = "com.aura.player.${project.name.replaceAll(":", "_").replaceAll("-", "_")}"
+                namespace = "com.example.free_play.${project.name.replaceAll(":", "_").replaceAll("-", "_")}"
             }
             compileOptions {
                 sourceCompatibility JavaVersion.VERSION_1_8

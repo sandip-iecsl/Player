@@ -12,12 +12,13 @@ plugins {
 // Load signing config from key.properties (not committed to git)
 val keyPropertiesFile = rootProject.file("key.properties")
 val keyProperties = Properties()
-if (keyPropertiesFile.exists()) {
+val hasKeystore = keyPropertiesFile.exists()
+if (hasKeystore) {
     keyProperties.load(FileInputStream(keyPropertiesFile))
 }
 
 android {
-    namespace = "com.aura.player"
+    namespace = "com.example.free_play"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -28,11 +29,11 @@ android {
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_1_8.toString()
+        jvmTarget = "1.8"
     }
 
     defaultConfig {
-        applicationId = "com.aura.player"
+        applicationId = "com.example.free_play"
         minSdk = flutter.minSdkVersion
         targetSdk = 34
         versionCode = flutter.versionCode
@@ -41,19 +42,21 @@ android {
 
     signingConfigs {
         create("release") {
-            if (keyPropertiesFile.exists()) {
-                keyAlias = keyProperties["keyAlias"] as String
-                keyPassword = keyProperties["keyPassword"] as String
-                storeFile = file("${keyProperties["storeFile"]}")
-                storePassword = keyProperties["storePassword"] as String
-            }
+            keyAlias = keyProperties.getProperty("keyAlias") ?: "aura-key"
+            keyPassword = keyProperties.getProperty("keyPassword") ?: ""
+            storeFile = file(keyProperties.getProperty("storeFile") ?: "aura-release-key.jks")
+            storePassword = keyProperties.getProperty("storePassword") ?: ""
         }
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            signingConfig = if (keyPropertiesFile.exists()) {
+            isMinifyEnabled = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = if (hasKeystore) {
                 signingConfigs.getByName("release")
             } else {
                 signingConfigs.getByName("debug")
