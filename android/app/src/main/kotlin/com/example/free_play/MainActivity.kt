@@ -483,50 +483,71 @@ class MainActivity : AudioServiceActivity() {
     private fun applyBitPerfectMode(audioManager: AudioManager?, sampleRate: Int, bitDepth: Int): Boolean {
         if (audioManager == null || Build.VERSION.SDK_INT < 34 || !hasBitPerfectOutput(audioManager)) return false
 
-        // Android 14+ (API 34) preferred mixer attributes API
-        if (Build.VERSION.SDK_INT >= 34) {
-            try {
-                val encoding = when (bitDepth) {
-                    24 -> AudioFormat.ENCODING_PCM_24BIT_PACKED
-                    32 -> AudioFormat.ENCODING_PCM_32BIT
-                    else -> AudioFormat.ENCODING_PCM_16BIT
+        try {
+            val audioAttributes = AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                .build()
+
+            val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+            var applied = false
+
+            for (device in devices) {
+                // Only apply to USB DAC / wired headphones — not Bluetooth or speakers
+                if (device.type != AudioDeviceInfo.TYPE_USB_DEVICE &&
+                    device.type != AudioDeviceInfo.TYPE_USB_HEADSET &&
+                    device.type != AudioDeviceInfo.TYPE_WIRED_HEADSET &&
+                    device.type != AudioDeviceInfo.TYPE_WIRED_HEADPHONES) continue
+
+                try {
+                    // Validate device supports the requested sample rate
+                    val supportedSampleRates = device.sampleRates
+                    val actualSampleRate = if (supportedSampleRates.isEmpty() || supportedSampleRates.contains(sampleRate)) {
+                        sampleRate
+                    } else {
+                        // Fall back to highest supported rate ≤ requested
+                        supportedSampleRates.filter { it <= sampleRate }.maxOrNull() ?: 48000
+                    }
+
+                    // Validate device supports the requested encoding, fall back gracefully
+                    val supportedEncodings = device.encodings
+                    val actualEncoding = when {
+                        bitDepth == 32 && (supportedEncodings.isEmpty() || supportedEncodings.contains(AudioFormat.ENCODING_PCM_32BIT)) ->
+                            AudioFormat.ENCODING_PCM_32BIT
+                        bitDepth >= 24 && (supportedEncodings.isEmpty() || supportedEncodings.contains(AudioFormat.ENCODING_PCM_24BIT_PACKED)) ->
+                            AudioFormat.ENCODING_PCM_24BIT_PACKED
+                        else ->
+                            AudioFormat.ENCODING_PCM_16BIT
+                    }
+
+                    val format = AudioFormat.Builder()
+                        .setSampleRate(actualSampleRate)
+                        .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
+                        .setEncoding(actualEncoding)
+                        .build()
+
+                    val mixerAttrs = AudioMixerAttributes.Builder(format)
+                        .setMixerBehavior(AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT)
+                        .build()
+
+                    audioManager.setPreferredMixerAttributes(audioAttributes, device, mixerAttrs)
+                    applied = true
+                    android.util.Log.d("BitPerfect",
+                        "✅ Applied MIXER_BEHAVIOR_BIT_PERFECT to ${device.productName} " +
+                        "(${actualSampleRate}Hz / ${when(actualEncoding) {
+                            AudioFormat.ENCODING_PCM_32BIT -> "32-bit"
+                            AudioFormat.ENCODING_PCM_24BIT_PACKED -> "24-bit"
+                            else -> "16-bit"
+                        }})")
+                } catch (e: Exception) {
+                    android.util.Log.w("BitPerfect", "⚠️ Failed for ${device.productName}: ${e.message}")
                 }
-
-                val format = AudioFormat.Builder()
-                    .setSampleRate(sampleRate)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
-                    .setEncoding(encoding)
-                    .build()
-
-                val audioAttributes = AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
-                    .build()
-
-                val devices = audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-                var applied = false
-
-                for (device in devices) {
-                    // Bluetooth and internal outputs are not bit-perfect eligible.
-                    if (device.type != AudioDeviceInfo.TYPE_USB_DEVICE &&
-                        device.type != AudioDeviceInfo.TYPE_USB_HEADSET &&
-                        device.type != AudioDeviceInfo.TYPE_WIRED_HEADSET &&
-                        device.type != AudioDeviceInfo.TYPE_WIRED_HEADPHONES) continue
-                    try {
-                        val mixerAttrs = AudioMixerAttributes.Builder(format)
-                            .setMixerBehavior(AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT)
-                            .build()
-
-                        audioManager.setPreferredMixerAttributes(audioAttributes, device, mixerAttrs)
-                        applied = true
-                    } catch (_: Exception) {}
-                }
-                return applied
-            } catch (e: Exception) {
-                return false
             }
+            return applied
+        } catch (e: Exception) {
+            android.util.Log.e("BitPerfect", "❌ applyBitPerfectMode error: ${e.message}")
+            return false
         }
-        return false
     }
 
     private fun clearBitPerfectMode(audioManager: AudioManager?) {
@@ -554,24 +575,35 @@ class MainActivity : AudioServiceActivity() {
             audioDeviceCallback = object : AudioDeviceCallback() {
                 override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
                     if (isBitPerfectEnabled) {
-                        applyBitPerfectMode(audioManager, activeSampleRate, activeBitDepth)
+                        val reApplied = applyBitPerfectMode(audioManager, activeSampleRate, activeBitDepth)
+                        if (!reApplied) isBitPerfectEnabled = false
                     }
+                    val hasEligible = hasBitPerfectOutput(audioManager)
                     mainHandler.post {
                         val map = HashMap<String, Any>()
                         map["activeDevice"] = getActiveOutputDeviceName(audioManager)
                         map["isUsbDac"] = isUsbAudioConnected(audioManager)
+                        map["isBitPerfectSupported"] = (Build.VERSION.SDK_INT >= 34) && hasEligible
+                        map["isBitPerfectActive"] = isBitPerfectEnabled
                         channel.invokeMethod("onAudioDeviceChanged", map)
                     }
                 }
 
                 override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
-                    if (isBitPerfectEnabled) {
+                    val hasEligible = hasBitPerfectOutput(audioManager)
+                    if (!hasEligible && isBitPerfectEnabled) {
+                        clearBitPerfectMode(audioManager)
+                        isBitPerfectEnabled = false
+                        android.util.Log.d("BitPerfect", "Eligible output removed - bit-perfect deactivated")
+                    } else if (isBitPerfectEnabled) {
                         applyBitPerfectMode(audioManager, activeSampleRate, activeBitDepth)
                     }
                     mainHandler.post {
                         val map = HashMap<String, Any>()
                         map["activeDevice"] = getActiveOutputDeviceName(audioManager)
                         map["isUsbDac"] = isUsbAudioConnected(audioManager)
+                        map["isBitPerfectSupported"] = (Build.VERSION.SDK_INT >= 34) && hasEligible
+                        map["isBitPerfectActive"] = isBitPerfectEnabled
                         channel.invokeMethod("onAudioDeviceChanged", map)
                     }
                 }
@@ -579,6 +611,7 @@ class MainActivity : AudioServiceActivity() {
             audioManager.registerAudioDeviceCallback(audioDeviceCallback, mainHandler)
         }
     }
+
 
     override fun onDestroy() {
         stopUdpServer()

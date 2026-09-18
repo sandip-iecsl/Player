@@ -93,10 +93,15 @@ class BitPerfectService {
       if (call.method == 'onAudioDeviceChanged') {
         final device = call.arguments['activeDevice']?.toString() ?? 'Default Audio Output';
         final isUsb = call.arguments['isUsbDac'] as bool? ?? false;
+        final isSupported = call.arguments['isBitPerfectSupported'] as bool? ?? _currentSpecs.isSupported;
+        final isActive = call.arguments['isBitPerfectActive'] as bool? ?? _currentSpecs.isBitPerfectActive;
         _updateSpecs(_currentSpecs.copyWith(
           activeDevice: device,
           isUsbDac: isUsb,
+          isSupported: isSupported,
+          isBitPerfectActive: isActive,
         ));
+        debugPrint('[BitPerfect] 🔌 Audio device changed → $device | USB: $isUsb | BitPerfect: $isActive');
       }
     });
     checkSupport();
@@ -189,13 +194,18 @@ class BitPerfectService {
   int _inferSampleRate(Song song) {
     final title = song.title.toLowerCase();
     final fmt = song.formatId?.toLowerCase() ?? '';
+    final url = (song.previewUrl ?? '').toLowerCase();
 
-    // Hi-Res Studio Master detection (96kHz / 192kHz)
+    // Hi-Res Studio Master detection (96kHz / 192kHz) — title tags or format IDs
     if (title.contains('96khz') || title.contains('24bit') || title.contains('hi-res') || fmt == 'flac_96') {
       return 96000;
     }
     if (title.contains('192khz') || title.contains('master') || fmt == 'flac_192') {
       return 192000;
+    }
+    // FLAC files (local or downloaded) — standard CD quality
+    if (fmt == 'flac' || url.endsWith('.flac') || title.contains('flac')) {
+      return 44100;
     }
     // YouTube audio streams (native Opus / AAC) are encoded at 48.0 kHz
     if (song.isYoutubeImport || song.id.startsWith('yt_') || song.youtubeUrl != null || fmt == '251' || fmt == '140') {
@@ -210,7 +220,8 @@ class BitPerfectService {
 
   int _inferBitDepth(Song song) {
     final title = song.title.toLowerCase();
-    if (title.contains('24bit') || title.contains('hi-res') || title.contains('flac')) {
+    final url = (song.previewUrl ?? '').toLowerCase();
+    if (title.contains('24bit') || title.contains('hi-res') || title.contains('flac') || url.endsWith('.flac')) {
       return 24;
     }
     if (title.contains('32bit') || title.contains('dsd')) {

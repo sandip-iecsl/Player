@@ -983,6 +983,47 @@ class AudioServiceHandler extends BaseAudioHandler {
     }
   }
 
+  /// Called immediately after [AudioPlayer.play()] succeeds for every track.
+  ///
+  /// Android 14+ `AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT` is bound to
+  /// an *active* native AudioTrack — calling `setPreferredMixerAttributes` before
+  /// `play()` has no effect because ExoPlayer hasn't opened the track yet.
+  ///
+  /// This helper:
+  ///   1. Re-applies bit-perfect mixer attributes at the correct moment (post-play).
+  ///   2. Updates the [BitPerfectService] state with per-song sample-rate / codec.
+  ///   3. Disables the software EQ/LoudnessEnhancer when bit-perfect is active
+  ///      (hardware bypass must not be polluted by Android DSP).
+  ///   4. Re-enables EQ with user settings when bit-perfect is NOT active.
+  Future<void> _configureBitPerfectPostPlay(Song song) async {
+    try {
+      final bitPerfect = BitPerfectService();
+      if (bitPerfect.currentSpecs.isBitPerfectActive) {
+        // Re-apply per-song sample-rate to Android HAL (now that AudioTrack is live)
+        final applied = await bitPerfect.configureForSong(song);
+        if (applied) {
+          // Bit-perfect active — bypass all software DSP
+          await _equalizer?.setEnabled(false);
+          await _loudnessEnhancer?.setEnabled(false);
+          print('[BitPerfect] ✅ HAL mixer attributes applied post-play for "${song.title}" '
+              '(${bitPerfect.currentSpecs.sampleRateDisplay} / '
+              '${bitPerfect.currentSpecs.bitDepth > 0 ? "${bitPerfect.currentSpecs.bitDepth}-bit" : "lossy"})');
+        } else {
+          // Hardware doesn't support it for this track — fall back to EQ
+          print('[BitPerfect] ⚠️ HAL apply failed for "${song.title}", reverting to software DSP');
+          await _updateEqualizer();
+        }
+      } else {
+        // Bit-perfect is off — run normal EQ chain
+        await _updateEqualizer();
+      }
+    } catch (e) {
+      print('[BitPerfect] ❌ Post-play config error: $e');
+      // Always fall back to EQ on any error
+      try { await _updateEqualizer(); } catch (_) {}
+    }
+  }
+
   Future<void> _playSong(Song song) async {
     final int currentSession = ++_playSessionId;
     int waitCount = 0;
@@ -1018,14 +1059,9 @@ class AudioServiceHandler extends BaseAudioHandler {
       }
 
       _currentSong = song;
-
-      // Configure Bit-Perfect mode & sample rate attributes for Android 14+ / USB DAC
-      // Bit-perfect is user opt-in. When it is already active, re-apply the
-      // requested source rate for the new track; never enable it implicitly.
-      final bitPerfect = BitPerfectService();
-      if (bitPerfect.currentSpecs.isBitPerfectActive) {
-        unawaited(bitPerfect.configureForSong(song));
-      }
+      // NOTE: Bit-Perfect configuration is applied AFTER play() succeeds.
+      // Android HAL only honours MIXER_BEHAVIOR_BIT_PERFECT on an active AudioTrack.
+      // See _configureBitPerfectPostPlay() calls below.
 
       _playHistory.add(song);
       if (_playHistory.length > 50) {
@@ -1182,7 +1218,8 @@ class AudioServiceHandler extends BaseAudioHandler {
             if (_playSessionId != currentSession) return;
             await _audioPlayer.play();
             _consecutiveFailures = 0;
-            unawaited(_updateEqualizer());
+            // Apply bit-perfect AFTER the native AudioTrack is open, then sync EQ
+            unawaited(_configureBitPerfectPostPlay(song));
             print('[Audio] ✅ Local file playback started');
             return;
           }
@@ -1241,7 +1278,8 @@ class AudioServiceHandler extends BaseAudioHandler {
           print('[Audio] ℹ️ Invoking play()...');
           await _audioPlayer.play();
           _consecutiveFailures = 0; // ✅ Reset on successful play
-          unawaited(_updateEqualizer());
+          // Apply bit-perfect AFTER the native AudioTrack is open, then sync EQ
+          unawaited(_configureBitPerfectPostPlay(song));
           unawaited(_warmAdjacentStreams());
           print('[Audio] ✅ Playback started successfully!');
           return;
@@ -1285,6 +1323,7 @@ class AudioServiceHandler extends BaseAudioHandler {
               if (_playSessionId != currentSession) return;
               await _audioPlayer.play();
               _consecutiveFailures = 0;
+              unawaited(_configureBitPerfectPostPlay(song));
               print('[Audio] ✅ Network retry succeeded!');
               return;
             } catch (netRetryErr) {
@@ -1314,6 +1353,7 @@ class AudioServiceHandler extends BaseAudioHandler {
               if (_playSessionId != currentSession) return;
               await _audioPlayer.play();
               _consecutiveFailures = 0;
+              unawaited(_configureBitPerfectPostPlay(song));
               print('[Audio] ✅ Retry after player reset succeeded!');
               return;
             } catch (retryErr) {
@@ -1338,6 +1378,7 @@ class AudioServiceHandler extends BaseAudioHandler {
                 if (_playSessionId != currentSession) return;
                 await _audioPlayer.play();
                 _consecutiveFailures = 0;
+                unawaited(_configureBitPerfectPostPlay(song));
                 print('[Audio] ✅ Playback resumed with fresh YouTube stream URL!');
                 return;
               }
@@ -1366,6 +1407,7 @@ class AudioServiceHandler extends BaseAudioHandler {
                 if (_playSessionId != currentSession) return;
                 await _audioPlayer.play();
                 _consecutiveFailures = 0;
+                unawaited(_configureBitPerfectPostPlay(song));
                 print('[Audio] ✅ Playback started with fresh URL!');
                 return;
               } else {
@@ -1396,6 +1438,7 @@ class AudioServiceHandler extends BaseAudioHandler {
               print('[Audio] ℹ️ Invoking play() for fallback AudioSource.uri...');
               await _audioPlayer.play();
               _consecutiveFailures = 0;
+              unawaited(_configureBitPerfectPostPlay(song));
               print('[Audio] ✅ Fallback AudioSource.uri playback started');
               return;
             } catch (e2) {
