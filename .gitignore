@@ -1,62 +1,35 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
 
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# Flutter/Dart generated files
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
-.pub-cache/
-.pub/
-/build/
-/coverage/
+.packages
+build/
+coverage/
+pubspec.lock
 
-# Symbolication related
-app.*.symbols
+# Local IDE and machine configuration
+.idea/
+.vscode/
+*.iml
 
-# Obfuscation related
-app.*.map.json
-
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-
-# Environment variables
+# Secrets and signing material
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+android/key.properties
+android/local.properties
+android/app/*.jks
+android/app/*.keystore
 
-# Node modules
+# Node dependencies and local service secrets
 node_modules/
 **/node_modules/
-package-lock.json
-**/package-lock.json
+youtube-extractor-microservice/.env
+youtube-extractor-microservice/cookies.txt
+youtube-extractor-microservice/yt-dlp
+youtube-extractor-microservice/yt-dlp.exe
 
-# Scratch & temporary testing files
-scratch/
-scratch_*.dart
-test_*.dart
+# Logs and OS files
 *.log
+.DS_Store
