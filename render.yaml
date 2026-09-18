@@ -20,3 +20,5 @@
         sync: false
       - key: MONGODB_DATABASE
         value: aura_player
+      - key: YTDLP_JS_RUNTIME
+        value: /usr/local/bin/deno

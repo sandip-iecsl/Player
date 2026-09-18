@@ -27,9 +27,13 @@ class DownloadService {
     }
 
     try {
-      final isYoutube = song.isYoutubeImport || song.id.startsWith('yt_') || song.youtubeUrl != null;
-      final targetFormatId = selectedFormat?.formatId ?? formatId ?? song.formatId;
-      final targetBitrate = selectedFormat?.bitrate ?? bitrate ?? song.bitrate ?? '320 kbps';
+      final isYoutube = song.isYoutubeImport ||
+          song.id.startsWith('yt_') ||
+          song.youtubeUrl != null;
+      final targetFormatId =
+          selectedFormat?.formatId ?? formatId ?? song.formatId;
+      final targetBitrate =
+          selectedFormat?.bitrate ?? bitrate ?? song.bitrate ?? '320 kbps';
 
       // 1. Resolve target download URL
       String? audioUrl = selectedFormat?.streamUrl ?? song.previewUrl;
@@ -37,7 +41,9 @@ class DownloadService {
       if (isYoutube) {
         if (selectedFormat != null && selectedFormat.streamUrl.isNotEmpty) {
           audioUrl = selectedFormat.streamUrl;
-        } else if (audioUrl == null || audioUrl.isEmpty || audioUrl.startsWith('unstreamable')) {
+        } else if (audioUrl == null ||
+            audioUrl.isEmpty ||
+            audioUrl.startsWith('unstreamable')) {
           audioUrl = await YouTubeExtractorService().getFreshStreamUrl(song);
         }
 
@@ -55,7 +61,8 @@ class DownloadService {
         return null;
       }
 
-      debugPrint('[Download] 🚀 Starting download: "${song.title}" ($targetBitrate - Format ID: $targetFormatId)');
+      debugPrint(
+          '[Download] 🚀 Starting download: "${song.title}" ($targetBitrate - Format ID: $targetFormatId)');
       final savedPath = await _downloadOnMobile(
         song,
         audioUrl,
@@ -95,7 +102,8 @@ class DownloadService {
             'isYoutubeImport': isYoutube,
             'youtubeUrl': song.youtubeUrl,
           });
-          debugPrint('[Download] 💾 Offline indexed "${song.title}" with Bitrate: $targetBitrate');
+          debugPrint(
+              '[Download] 💾 Offline indexed "${song.title}" with Bitrate: $targetBitrate');
         } catch (e) {
           debugPrint('[Download] Offline indexing note: $e');
         }
@@ -115,6 +123,7 @@ class DownloadService {
     YouTubeAudioFormat? selectedFormat,
     String? targetFormatId,
   }) async {
+    String? temporaryPath;
     try {
       final directory = await getDownloadsDirectory();
       if (directory == null) {
@@ -127,28 +136,105 @@ class DownloadService {
         await auraDir.create(recursive: true);
       }
 
-      final isYoutube = song.isYoutubeImport || song.id.startsWith('yt_') || song.youtubeUrl != null;
+      final isYoutube = song.isYoutubeImport ||
+          song.id.startsWith('yt_') ||
+          song.youtubeUrl != null;
       final selectedExtension = selectedFormat?.format.toLowerCase();
-      final isOpus = selectedExtension == 'opus' || targetFormatId == '251' || targetFormatId == '250';
+      final isOpus = selectedExtension == 'opus' ||
+          targetFormatId == '251' ||
+          targetFormatId == '250';
       final isWebm = selectedExtension == 'webm' || targetFormatId == '249';
       final ext = isYoutube
-          ? (isOpus ? 'opus' : isWebm ? 'webm' : 'm4a')
+          ? (isOpus
+              ? 'opus'
+              : isWebm
+                  ? 'webm'
+                  : 'm4a')
           : (selectedExtension ?? 'mp3');
       final fileName = '${_sanitizeFileName(song.title)}.$ext';
       final filePath = '${auraDir.path}/$fileName';
+      temporaryPath = '$filePath.part';
+      final temporaryFile = File(temporaryPath);
 
-      await _dio.download(
+      if (await temporaryFile.exists()) await temporaryFile.delete();
+      final response = await _dio.get<ResponseBody>(
         audioUrl,
-        filePath,
-        onReceiveProgress: onProgress,
+        options: Options(
+          responseType: ResponseType.stream,
+          receiveTimeout: const Duration(minutes: 3),
+          sendTimeout: const Duration(seconds: 30),
+          validateStatus: (status) =>
+              status != null && status >= 200 && status < 300,
+        ),
       );
 
-      debugPrint('[Download] ✅ Saved binary file: $filePath');
-      return filePath;
+      final contentType =
+          response.headers.value(Headers.contentTypeHeader)?.toLowerCase() ??
+              '';
+      if (contentType.contains('text/html') ||
+          contentType.contains('application/json')) {
+        throw StateError('download response is not audio: $contentType');
+      }
+
+      final total = response.headers.value(Headers.contentLengthHeader);
+      final totalBytes = int.tryParse(total ?? '') ?? -1;
+      var received = 0;
+      final sink = temporaryFile.openWrite();
+      try {
+        await for (final chunk in response.data!.stream) {
+          sink.add(chunk);
+          received += chunk.length;
+          onProgress(received, totalBytes);
+        }
+      } finally {
+        await sink.flush();
+        await sink.close();
+      }
+
+      if (received < 16 * 1024 || !await _hasAudioSignature(temporaryFile)) {
+        throw StateError('downloaded file failed audio validation');
+      }
+
+      final finalFile = File(filePath);
+      if (await finalFile.exists()) await finalFile.delete();
+      final committedFile = await temporaryFile.rename(filePath);
+      debugPrint(
+          '[Download] ✅ Validated and saved binary file: ${committedFile.path}');
+      return committedFile.path;
     } catch (e) {
       debugPrint('[Download] Mobile download error: $e');
+      try {
+        final directory = await getDownloadsDirectory();
+        if (temporaryPath != null && directory != null) {
+          final partial = File(temporaryPath);
+          if (await partial.exists()) await partial.delete();
+        }
+      } catch (_) {}
       return null;
     }
+  }
+
+  Future<bool> _hasAudioSignature(File file) async {
+    final bytes = await file
+        .openRead(0, 16)
+        .fold<List<int>>(<int>[], (all, chunk) => all..addAll(chunk));
+    if (bytes.length < 4) return false;
+    final isOgg = bytes[0] == 0x4f &&
+        bytes[1] == 0x67 &&
+        bytes[2] == 0x67 &&
+        bytes[3] == 0x53;
+    final isWebm = bytes.length >= 4 &&
+        bytes[0] == 0x1a &&
+        bytes[1] == 0x45 &&
+        bytes[2] == 0xdf &&
+        bytes[3] == 0xa3;
+    final isMp4 = bytes.length >= 8 &&
+        bytes[4] == 0x66 &&
+        bytes[5] == 0x74 &&
+        bytes[6] == 0x79 &&
+        bytes[7] == 0x70;
+    final isId3 = bytes[0] == 0x49 && bytes[1] == 0x44 && bytes[2] == 0x33;
+    return isOgg || isWebm || isMp4 || isId3;
   }
 
   String _sanitizeFileName(String fileName) {
@@ -160,7 +246,8 @@ class DownloadService {
     try {
       final directory = await getDownloadsDirectory();
       if (directory == null) return false;
-      final base = '${directory.path}/AuraPlayer/${_sanitizeFileName(song.title)}';
+      final base =
+          '${directory.path}/AuraPlayer/${_sanitizeFileName(song.title)}';
       for (final ext in ['m4a', 'opus', 'webm', 'mp3']) {
         if (File('$base.$ext').existsSync()) return true;
       }
@@ -196,7 +283,8 @@ class DownloadService {
     try {
       final directory = await getDownloadsDirectory();
       if (directory == null) return;
-      final base = '${directory.path}/AuraPlayer/${_sanitizeFileName(song.title)}';
+      final base =
+          '${directory.path}/AuraPlayer/${_sanitizeFileName(song.title)}';
       for (final ext in ['m4a', 'opus', 'webm', 'mp3']) {
         final file = File('$base.$ext');
         if (await file.exists()) {

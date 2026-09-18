@@ -9,6 +9,10 @@ class YouTubeAudioFormat {
   final String estimatedSizeMb; // '9.2 MB', '3.8 MB', '1.9 MB'
   final String streamUrl;
   final String formatId; // '140', '139', '249'
+  final String? sourceCodec;
+  final int? sourceBitrateKbps;
+  final int? sampleRateHz;
+  final int? channels;
 
   const YouTubeAudioFormat({
     required this.quality,
@@ -17,11 +21,20 @@ class YouTubeAudioFormat {
     required this.estimatedSizeMb,
     required this.streamUrl,
     required this.formatId,
+    this.sourceCodec,
+    this.sourceBitrateKbps,
+    this.sampleRateHz,
+    this.channels,
   });
 
-  bool get isHighQuality => quality == 'High' || bitrate.contains('320') || bitrate.contains('256');
-  bool get isMediumQuality => quality == 'Medium' || bitrate.contains('128') || bitrate.contains('160');
-  bool get isDataSaver => quality == 'Data Saver' || bitrate.contains('64') || bitrate.contains('48');
+  bool get isHighQuality =>
+      quality == 'High' || bitrate.contains('320') || bitrate.contains('256');
+  bool get isMediumQuality =>
+      quality == 'Medium' || bitrate.contains('128') || bitrate.contains('160');
+  bool get isDataSaver =>
+      quality == 'Data Saver' ||
+      bitrate.contains('64') ||
+      bitrate.contains('48');
 
   factory YouTubeAudioFormat.fromJson(Map<String, dynamic> json) {
     return YouTubeAudioFormat(
@@ -31,6 +44,10 @@ class YouTubeAudioFormat {
       estimatedSizeMb: json['estimatedSizeMb']?.toString() ?? '3.5 MB',
       streamUrl: json['streamUrl']?.toString() ?? '',
       formatId: json['formatId']?.toString() ?? '139',
+      sourceCodec: json['sourceCodec']?.toString(),
+      sourceBitrateKbps: (json['sourceBitrateKbps'] as num?)?.toInt(),
+      sampleRateHz: (json['sampleRateHz'] as num?)?.toInt(),
+      channels: (json['channels'] as num?)?.toInt(),
     );
   }
 
@@ -42,18 +59,24 @@ class YouTubeAudioFormat {
       'estimatedSizeMb': estimatedSizeMb,
       'streamUrl': streamUrl,
       'formatId': formatId,
+      'sourceCodec': sourceCodec,
+      'sourceBitrateKbps': sourceBitrateKbps,
+      'sampleRateHz': sampleRateHz,
+      'channels': channels,
     };
   }
 
   /// Helper to estimate file size in MB given bitrate in kbps and duration in seconds
   static String estimateSizeMb(double bitrateKbps, int durationSec) {
     if (durationSec <= 0) return 'Unknown';
-    final mb = ((bitrateKbps * 1000 * durationSec) / (8 * 1024 * 1024)).toStringAsFixed(1);
+    final mb = ((bitrateKbps * 1000 * durationSec) / (8 * 1024 * 1024))
+        .toStringAsFixed(1);
     return '$mb MB';
   }
 
   /// Default predefined fallback tiers
-  static List<YouTubeAudioFormat> defaults({required String streamUrl, int durationSec = 180}) {
+  static List<YouTubeAudioFormat> defaults(
+      {required String streamUrl, int durationSec = 180}) {
     final highMb = estimateSizeMb(320, durationSec);
     final medMb = estimateSizeMb(128, durationSec);
     final lowMb = estimateSizeMb(64, durationSec);

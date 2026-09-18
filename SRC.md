@@ -351,22 +351,14 @@ $$\text{FinalScore} = (\text{TextRel} \times 0.42) + (\text{Pop} \times 0.14) + 
 ## 16. Backend Microservice Endpoints
 
 Located in `youtube-extractor-microservice/server.js`:
-- `GET /health`: Service health, engine version, and non-sensitive `youtubeCookiesConfigured` status.
-- `GET /api/search/youtube?q=...&limit=20`: Server-side YouTube Data API v3 proxy with yt-dlp fallback.
-- `POST /api/youtube/extract`: Multi-format stream resolution.
-- `GET /api/youtube/download?url=...&quality=High`: Direct audio binary stream.
+- `GET /health`: Non-secret runtime diagnostics including yt-dlp version, EJS/runtime status, cookie status, and server version.
+- `GET /api/search/youtube?q=...&limit=20`: YouTube discovery via Data API, then yt-dlp search; JioSaavn search remains a separate provider.
+- `POST /api/youtube/extract`: Same-source YouTube media resolution with exact `source`, `videoId`, and `requestedVideoId` validation.
+- `GET /api/youtube/download?url=...&quality=High`: Same-source YouTube download; failures return `YOUTUBE_SOURCE_UNAVAILABLE`.
 
-All yt-dlp calls receive `--cookies <path>` when `cookies.txt` exists. At startup, the service decodes `YOUTUBE_COOKIES_BASE64` into `youtube-extractor-microservice/cookies.txt`; a local cookie file is also supported for development.
-- `GET /health`: Service health and engine version check.
-- `GET /api/search/youtube?q=...&limit=20`: Server-side YouTube Data API v3 proxy with best-effort yt-dlp fallback.
-- `POST /api/youtube/extract`: Multi-format stream resolution.
-- `GET /api/youtube/download?url=...&quality=High`: Direct audio binary stream.
-
-The deployed extractor may log `Sign in to confirm you're not a bot` when YouTube blocks
-yt-dlp. This is an upstream bot-verification failure, not a valid track-resolution result.
-The JioSaavn fallback remains a separate third-party integration and is not modified. Its
-responses are marked `source: 'jiosaavn-fallback'`; the Flutter YouTube import flow rejects
-that marker so a YouTube screen item cannot play a different JioSaavn recording.
+One shared `buildYtDlpArgs` function owns cookies, EJS, JavaScript runtime, extractor arguments,
+playlist/certificate flags, and URL separation. Metadata discovery is not media resolution.
+JioSaavn never replaces a requested YouTube recording.
 
 ---
 
@@ -379,10 +371,9 @@ Template available in `.env.example`:
 - `MONGODB_DATA_API_URL` / `MONGODB_API_KEY`: Atlas search endpoints.
 - `DEEZER_ENABLED`: `true` / `false`.
 - `PORT`: HTTP port for the microservice; defaults to `3000`.
-- `YOUTUBE_COOKIES_BASE64`: Base64-encoded Netscape-format YouTube cookies for yt-dlp authentication.
-- `YOUTUBE_COOKIES_BASE64`: Optional base64-encoded Netscape-format YouTube cookies for
-   authenticated yt-dlp requests in cloud environments.
+- `YOUTUBE_COOKIES_BASE64`: Optional base64-encoded Netscape-format cookies for authenticated yt-dlp requests.
 - `YOUTUBE_COOKIES_FILE`: Optional path to a mounted Netscape-format cookie file.
+- `YTDLP_JS_RUNTIME`: Optional explicit JavaScript runtime path; Render uses `/usr/local/bin/deno`.
 
 ---
 

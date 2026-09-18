@@ -288,7 +288,7 @@ When a user types in the search box:
 - **Jamendo**: Delivers open-license Creative Commons tracks and verifies `audiodownload_allowed` before enabling offline downloads.
 - **JioSaavn**: Provides rich Bollywood, regional Indian, and global pop audio streams with dynamic authentication token generation.
 - **Deezer**: Acts as a metadata enricher and instant 30-second preview provider.
-- **YouTube (Backend)**: Operates server-side through `youtube-extractor-microservice` to protect API keys, providing YouTube Data API v3 search with yt-dlp fallback.
+- **YouTube (Backend)**: Provides discovery through YouTube Data API v3 and same-source media extraction through yt-dlp, Piped, or Invidious. Metadata success never implies playable media.
 - **Spotify**: Supplies album artwork, track popularity ratings, and recommendation seed vectors.
 - **MongoDB Atlas**: Runs full-text Lucene autocomplete and fuzzy search on Aura's own indexed song catalogue.
 
@@ -364,8 +364,11 @@ When network connectivity is unavailable:
 ---
 
 ## 16. Quota Management
-`QuotaManager` enforces client-side and server-side rate-limiting:
-- **YouTube Data API**: 10,000 quota units/day (100 units/search). Avoids duplicate queries and stops additional calls when confident local results exist.
+`QuotaManager` provides configurable client-side provider budgeting. For the standard YouTube Data API allocation, Google currently documents:
+- **Daily allocation**: 10,000 units per project, resetting at midnight Pacific Time.
+- **`search.list`**: 100 units per request.
+- **`videos.list`**: 1 unit per request.
+- These values are configuration/documentation defaults, not guarantees for every Google Cloud project; keep the API key server-side and verify current Google quota documentation before deployment.
 - **Audius & Jamendo**: 10,000 requests/day bucket.
 - **JioSaavn**: Rate-limit protection with 5s timeout and circuit breaker fallback.
 
@@ -374,14 +377,13 @@ When network connectivity is unavailable:
 ## 17. Backend Architecture
 The backend microservice (`youtube-extractor-microservice/server.js`) runs an Express server:
 - **Endpoint 1: `GET /api/search/youtube`**: Executes YouTube Data API v3 searches server-side, with `yt-dlp --flat-playlist` as a fallback. yt-dlp may be blocked by YouTube bot checks in cloud environments.
-- **Endpoint 2: `POST /api/youtube/extract`**: Multi-format audio stream extraction (High 320kbps, Medium 128kbps, Low 64kbps).
+- **Endpoint 2: `POST /api/youtube/extract`**: Same-source YouTube media extraction. Successful responses include `source: "youtube"`, the exact `videoId`, `requestedVideoId`, and `mediaState: "MediaResolved"`; failures return `YOUTUBE_SOURCE_UNAVAILABLE`.
 - **Endpoint 3: `GET /api/youtube/download`**: Streams audio binaries directly with intact audio container headers.
-- Every yt-dlp invocation uses `cookies.txt` when available. The file is generated from `YOUTUBE_COOKIES_BASE64` at startup or can be supplied locally for development.
+- Every yt-dlp invocation is built by one shared argument function. It configures EJS, `--js-runtimes`, cookies, extractor arguments, playlist/certificate flags, and the URL separator exactly once.
 
-YouTube extraction preserves provider identity. A JioSaavn fallback response is marked as
-`source: "jiosaavn-fallback"` and is rejected by the Flutter YouTube import flow; it must
-never be presented or played as the requested YouTube recording. The third-party JioSaavn
-client remains unchanged.
+YouTube extraction preserves provider identity. JioSaavn remains a separate discovery/provider
+feature and is never used as YouTube media fallback. If all same-source media paths fail, the
+service returns `YOUTUBE_SOURCE_UNAVAILABLE` with the requested ID and no replacement URL.
 
 ---
 
@@ -390,22 +392,21 @@ client remains unchanged.
 > **API Key Protection**: YouTube API keys must **NEVER** be committed into git or hardcoded into Flutter client source code.
 - Keys are loaded from `process.env.YOUTUBE_API_KEY` on the backend server only.
 - Client requests go through the backend `/api/search/youtube` proxy.
-- YouTube session cookies are loaded from `process.env.YOUTUBE_COOKIES_BASE64` and written to the ignored `youtube-extractor-microservice/cookies.txt` file at startup.
-- `/health` exposes `youtubeCookiesConfigured: true|false`; it never returns cookie data.
+- YouTube session cookies are loaded from `YOUTUBE_COOKIES_BASE64` or `YOUTUBE_COOKIES_FILE` and written only to runtime storage.
+- `/health` exposes yt-dlp version, EJS/runtime configuration, cookie status, and server version; it never returns cookie data.
 - Do not treat a successful fallback response as proof that the original YouTube video was
   resolved. Validate the response source and video ID before caching or playback.
 - Cloud deployments should keep yt-dlp current. If logs contain `Sign in to confirm you're
   not a bot`, the YouTube extractor is being challenged by YouTube; update yt-dlp and use a
   supported authenticated cookie configuration for the deployment, or rely on the official
   YouTube Data API/search path. Never commit cookie files or browser credentials.
-- The extractor accepts `YOUTUBE_COOKIES_BASE64` or `YOUTUBE_COOKIES_FILE` for a secret
-  Netscape-format cookie file. `/health` reports only `ytDlpCookiesConfigured: true|false`.
+- The container uses Node 22 for Express and Deno 2.3+ for yt-dlp JavaScript challenges.
 
 ---
 
 ## 19. MongoDB Atlas Search Configuration
 For Aura-owned catalog indexing on MongoDB Atlas M0 cluster:
-- **Database**: `aura_music`
+- **Database**: `aura_player`
 - **Collection**: `songs`
 - **Search Index Name**: `search_index`
 

@@ -6,6 +6,11 @@ const fs = require('fs');
 const { spawn, execFile } = require('child_process');
 const axios = require('axios');
 require('dotenv').config();
+const {
+  YTDLP_BIN,
+  buildYtDlpArgs,
+  diagnostics,
+} = require('./yt_dlp_config');
 
 process.on('uncaughtException', (error) => {
   console.error('[Process] Uncaught exception:', error);
@@ -23,46 +28,8 @@ app.use(express.json());
 // YouTube URL Validation Pattern (supports watch, shorts, embed, youtu.be, music.youtube, m.youtube, and playlists/mixes)
 const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.|music\.|m\.)?(youtube\.com\/(watch\?.*v=|shorts\/|live\/|v\/|embed\/|playlist\?)|youtu\.be\/)([a-zA-Z0-9_\-\?&=%#\.\+]+)$/i;
 
-// Path to bundled yt-dlp binary (Windows and Linux / Cloud Container)
-const LOCAL_YTDLP = path.join(__dirname, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
-const YTDLP_BIN = fs.existsSync(LOCAL_YTDLP) ? LOCAL_YTDLP : 'yt-dlp';
-
-// Render can provide an authenticated Netscape cookie file through a secret.
-// Prefer YOUTUBE_COOKIES_BASE64 so credentials are never committed or logged.
-const COOKIE_RUNTIME_PATH = path.join(os.tmpdir(), 'aura-youtube-cookies.txt');
-let ytCookiesPath = null;
-
-function prepareYtDlpCookies() {
-  const configuredFile = process.env.YOUTUBE_COOKIES_FILE?.trim();
-  if (configuredFile && fs.existsSync(configuredFile)) {
-    ytCookiesPath = configuredFile;
-    return;
-  }
-
-  const encodedCookies = process.env.YOUTUBE_COOKIES_BASE64?.trim();
-  if (!encodedCookies) return;
-
-  try {
-    const decodedCookies = Buffer.from(encodedCookies, 'base64');
-    if (decodedCookies.length === 0) throw new Error('empty cookie payload');
-    fs.writeFileSync(COOKIE_RUNTIME_PATH, decodedCookies, { mode: 0o600 });
-    ytCookiesPath = COOKIE_RUNTIME_PATH;
-  } catch (error) {
-    console.warn(`[YouTube] Cookie secret could not be loaded: ${error.message}`);
-  }
-}
-
-prepareYtDlpCookies();
-
-function ytDlpCommonArgs() {
-  const args = [
-    '--remote-components', 'ejs:github',
-    '--extractor-args', 'youtube:player_client=tv_embedded,mweb,android,ios',
-    '--extractor-args', 'youtube:player_skip=webpage,configs',
-  ];
-  if (ytCookiesPath) args.push('--cookies', ytCookiesPath);
-  return args;
-}
+const runtimeDiagnostics = diagnostics();
+console.log(`[Microservice] Runtime ${JSON.stringify(runtimeDiagnostics)}`);
 
 // Helper to clean, sanitize, and re-format YouTube Mix / Radio & Standard URLs
 function normalizeYouTubeUrl(inputUrl) {
@@ -127,41 +94,6 @@ function cleanTrackTitle(rawTitle) {
     .trim();
 }
 
-/**
- * Extract clean query words suitable for high-accuracy search matchers
- */
-function extractCleanSongQuery(rawTitle, rawArtist) {
-  let cleaned = cleanTrackTitle(rawTitle);
-  // Remove trailing pipe sections or parentheses
-  cleaned = cleaned.replace(/\|.*$/, '').replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
-  if (cleaned.includes(' - ')) {
-    const parts = cleaned.split(' - ');
-    return `${parts[0].trim()} ${parts[1].trim()}`;
-  }
-  if (rawArtist && !cleaned.toLowerCase().includes(rawArtist.toLowerCase())) {
-    return `${cleaned} ${rawArtist}`.trim();
-  }
-  return cleaned;
-}
-
-/**
- * Token-based title similarity score between 0.0 and 1.0
- */
-function calculateTitleSimilarity(query, candidateTitle) {
-  if (!query || !candidateTitle) return 0;
-  const qTokens = query.toLowerCase().replace(/[^a-z0-9\u0900-\u097F\u0980-\u09FF]/g, ' ').split(/\s+/).filter(t => t.length >= 2);
-  const cTokens = candidateTitle.toLowerCase().replace(/[^a-z0-9\u0900-\u097F\u0980-\u09FF]/g, ' ').split(/\s+/).filter(t => t.length >= 2);
-  if (qTokens.length === 0 || cTokens.length === 0) return 0;
-
-  let matches = 0;
-  for (const qt of qTokens) {
-    if (cTokens.some(ct => ct === qt || ct.includes(qt) || qt.includes(ct))) {
-      matches++;
-    }
-  }
-  return matches / qTokens.length;
-}
-
 const STRICT_VIDEO_ID_REGEX = /^[a-zA-Z0-9_\-]{11}$/;
 
 /**
@@ -189,11 +121,42 @@ function extractVideoId(url) {
  * Calculate estimated size in MB given bitrate in kbps and duration in seconds
  */
 function estimateSizeMb(bitrateKbps, durationSec) {
-  if (!bitrateKbps || !durationSec) return '3.5 MB';
+  if (!bitrateKbps || !durationSec) return 'Unknown';
   const totalBits = bitrateKbps * 1000 * durationSec;
   const totalBytes = totalBits / 8;
   const sizeMb = (totalBytes / (1024 * 1024)).toFixed(1);
   return `${sizeMb} MB`;
+}
+
+function youtubeUnavailable(res, requestedVideoId, category, message) {
+  return res.status(502).json({
+    error: 'YOUTUBE_SOURCE_UNAVAILABLE',
+    requestedVideoId,
+    provider: 'youtube',
+    category,
+    message,
+  });
+}
+
+function isLikelyAudioResponse(response) {
+  const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
+  if (contentType.includes('text/html') || contentType.includes('application/json')) return false;
+  const contentLength = Number(response.headers?.['content-length'] || 0);
+  return !contentLength || contentLength >= 16 * 1024;
+}
+
+function isReadableAudioFile(filePath) {
+  try {
+    if (fs.statSync(filePath).size < 16 * 1024) return false;
+    const header = fs.readFileSync(filePath).subarray(0, 16);
+    const isOgg = header.subarray(0, 4).toString() === 'OggS';
+    const isWebm = header.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3]));
+    const isMp4 = header.length >= 8 && header.subarray(4, 8).toString() === 'ftyp';
+    const isId3 = header.subarray(0, 3).toString() === 'ID3';
+    return isOgg || isWebm || isMp4 || isId3;
+  } catch (_) {
+    return false;
+  }
 }
 
 /**
@@ -204,7 +167,7 @@ app.get('/health', (req, res) => {
     status: 'online',
     service: 'Aura Player YouTube Extractor Microservice',
     engine: `yt-dlp (${YTDLP_BIN})`,
-    ytDlpCookiesConfigured: Boolean(ytCookiesPath),
+    ...runtimeDiagnostics,
     supportedQualities: ['High (320 kbps)', 'Medium (128 kbps)', 'Data Saver (64 kbps)'],
     timestamp: new Date().toISOString()
   });
@@ -234,21 +197,19 @@ app.post('/api/youtube/extract', async (req, res) => {
     console.log(`[Extractor] 🔍 Resolving multi-format audio streams with yt-dlp for: ${targetUrl} (ID: ${videoId})`);
 
     // yt-dlp dump-single-json to parse full format list without re-encoding
-    const ytDlpArgs = [
-      '--dump-single-json',
-      '--no-warnings',
-      '--no-playlist',
-      '--no-check-certificates',
-      '-f', 'bestaudio/140/251/139/best',
-      ...ytDlpCommonArgs(),
-      '--',
-      targetUrl
-    ];
+    const ytDlpArgs = buildYtDlpArgs({
+      dumpJson: true,
+      format: 'bestaudio/140/251/139/best',
+    });
+    ytDlpArgs.push(targetUrl);
 
     execFile(YTDLP_BIN, ytDlpArgs, { maxBuffer: 100 * 1024 * 1024, timeout: 60000 }, async (error, stdout, stderr) => {
       if (!error && stdout) {
         try {
           const info = JSON.parse(stdout);
+          if (info.id && info.id !== videoId) {
+            throw new Error(`yt-dlp returned unexpected video ID ${info.id}`);
+          }
           const rawTitle = info.title || 'YouTube Audio';
           const cleanTitle = cleanTrackTitle(rawTitle);
           const artistName = info.artist || info.uploader || info.channel || 'YouTube Artist';
@@ -263,7 +224,7 @@ app.post('/api/youtube/extract', async (req, res) => {
           audioFormats.sort((a, b) => (b.abr || 0) - (a.abr || 0));
 
           // 1. High Quality Tier (HQ: 256kbps - 320kbps or best available)
-          const hqStream = audioFormats.find(f => (f.abr && f.abr >= 160) || f.format_id === '140' || f.ext === 'm4a') || audioFormats[0] || { url: info.url, format_id: '140', abr: 320, ext: 'm4a' };
+          const hqStream = audioFormats.find(f => (f.abr && f.abr >= 160) || f.format_id === '140' || f.ext === 'm4a') || audioFormats[0] || { url: info.url, format_id: 'unknown', abr: null, ext: info.ext || 'unknown' };
 
           // 2. Medium Quality Tier (MQ: 128kbps - 160kbps)
           const mqStream = audioFormats.find(f => f.abr && f.abr >= 96 && f.abr <= 160) || audioFormats.find(f => f.format_id === '139') || hqStream;
@@ -274,24 +235,36 @@ app.post('/api/youtube/extract', async (req, res) => {
           const availableFormats = [
             {
               quality: 'High',
-              bitrate: hqStream.abr ? `${Math.round(hqStream.abr)} kbps` : '320 kbps',
+              bitrate: hqStream.abr ? `${Math.round(hqStream.abr)} kbps` : 'Unknown',
               format: hqStream.ext || 'm4a',
+              sourceCodec: hqStream.acodec || null,
+              sourceBitrateKbps: hqStream.abr ? Math.round(hqStream.abr) : null,
+              sampleRateHz: hqStream.asr || null,
+              channels: hqStream.audio_channels || null,
               estimatedSizeMb: estimateSizeMb(hqStream.abr || 320, durationSec),
               streamUrl: hqStream.url || info.url,
               formatId: hqStream.format_id || '140'
             },
             {
               quality: 'Medium',
-              bitrate: mqStream.abr ? `${Math.round(mqStream.abr)} kbps` : '128 kbps',
+              bitrate: mqStream.abr ? `${Math.round(mqStream.abr)} kbps` : 'Unknown',
               format: mqStream.ext || 'm4a',
+              sourceCodec: mqStream.acodec || null,
+              sourceBitrateKbps: mqStream.abr ? Math.round(mqStream.abr) : null,
+              sampleRateHz: mqStream.asr || null,
+              channels: mqStream.audio_channels || null,
               estimatedSizeMb: estimateSizeMb(mqStream.abr || 128, durationSec),
               streamUrl: mqStream.url || hqStream.url || info.url,
               formatId: mqStream.format_id || '139'
             },
             {
               quality: 'Data Saver',
-              bitrate: lqStream.abr ? `${Math.round(lqStream.abr)} kbps` : '64 kbps',
+              bitrate: lqStream.abr ? `${Math.round(lqStream.abr)} kbps` : 'Unknown',
               format: lqStream.ext || 'm4a',
+              sourceCodec: lqStream.acodec || null,
+              sourceBitrateKbps: lqStream.abr ? Math.round(lqStream.abr) : null,
+              sampleRateHz: lqStream.asr || null,
+              channels: lqStream.audio_channels || null,
               estimatedSizeMb: estimateSizeMb(lqStream.abr || 64, durationSec),
               streamUrl: lqStream.url || mqStream.url || info.url,
               formatId: lqStream.format_id || '249'
@@ -300,6 +273,10 @@ app.post('/api/youtube/extract', async (req, res) => {
 
           const payloadResponse = {
             id: `yt_${videoId}`,
+            source: 'youtube',
+            videoId,
+            requestedVideoId: videoId,
+            mediaState: 'MediaResolved',
             title: cleanTitle,
             artist: artistName,
             album: 'YouTube Imports',
@@ -347,6 +324,10 @@ app.post('/api/youtube/extract', async (req, res) => {
                   quality: qualityTier,
                   bitrate: `${abr} kbps`,
                   format: (st.format || 'm4a').toLowerCase().replace('webm', 'opus'),
+                  sourceCodec: st.codec || null,
+                  sourceBitrateKbps: abr,
+                  sampleRateHz: st.sampleRate || null,
+                  channels: st.channels || null,
                   estimatedSizeMb: estimateSizeMb(abr, durationSec),
                   streamUrl: st.url,
                   formatId: String(st.format || '140')
@@ -355,6 +336,10 @@ app.post('/api/youtube/extract', async (req, res) => {
 
               const payloadResponse = {
                 id: `yt_${videoId}`,
+                source: 'youtube',
+                videoId,
+                requestedVideoId: videoId,
+                mediaState: 'MediaResolved',
                 title: title,
                 artist: uploader,
                 album: 'YouTube Imports',
@@ -385,6 +370,10 @@ app.post('/api/youtube/extract', async (req, res) => {
                     quality: qualityTier,
                     bitrate: `${abr} kbps`,
                     format: (st.container || 'm4a').toLowerCase().replace('webm', 'opus'),
+                    sourceCodec: st.type || null,
+                    sourceBitrateKbps: abr,
+                    sampleRateHz: st.sampleRate || null,
+                    channels: null,
                     estimatedSizeMb: estimateSizeMb(abr, durationSec),
                     streamUrl: st.url,
                     formatId: String(st.itag || '140')
@@ -393,6 +382,10 @@ app.post('/api/youtube/extract', async (req, res) => {
 
                 const payloadResponse = {
                   id: `yt_${videoId}`,
+                  source: 'youtube',
+                  videoId,
+                  requestedVideoId: videoId,
+                  mediaState: 'MediaResolved',
                   title: title,
                   artist: author,
                   album: 'YouTube Imports',
@@ -411,125 +404,13 @@ app.post('/api/youtube/extract', async (req, res) => {
         } catch (streamErr) {}
       }
 
-      console.warn(`[Extractor] ⚠️ Piped & Invidious failed. Trying YouTube oEmbed + JioSaavn fallback...`);
-
-      // Strategy 3: YouTube oEmbed + High-Accuracy JioSaavn Matcher
-      try {
-        const oembedRes = await axios.get('https://www.youtube.com/oembed', {
-          params: { url: targetUrl, format: 'json' },
-          timeout: 4000
-        });
-
-        if (oembedRes.data && oembedRes.data.title) {
-          const rawTitle = oembedRes.data.title;
-          const cleanTitle = cleanTrackTitle(rawTitle);
-          const authorName = oembedRes.data.author_name || 'YouTube Artist';
-          const cleanQuery = extractCleanSongQuery(rawTitle, authorName);
-
-          console.log(`[Extractor] 🔎 Searching JioSaavn for clean extracted query: "${cleanQuery}"`);
-
-          const saavnRes = await axios.get('https://www.jiosaavn.com/api.php', {
-            params: {
-              __call: 'search.getResults',
-              _format: 'json',
-              _marker: '0',
-              api_version: '4',
-              ctx: 'web6dot0',
-              n: '10',
-              p: '1',
-              q: cleanQuery
-            },
-            timeout: 5000
-          });
-
-          const results = saavnRes.data?.results || [];
-          if (results.length > 0) {
-            // Find best matching song by title similarity
-            let bestMatch = null;
-            let highestSim = 0;
-
-            for (const candidate of results) {
-              const candTitle = cleanTrackTitle(candidate.title || candidate.song || '');
-              const sim = calculateTitleSimilarity(cleanQuery, candTitle);
-              if (sim > highestSim) {
-                highestSim = sim;
-                bestMatch = candidate;
-              }
-            }
-
-            // Accept match only if similarity score is adequate (>= 0.40)
-            if (bestMatch && highestSim >= 0.40) {
-              const encryptedMediaUrl = bestMatch.more_info?.encrypted_media_url;
-              let streamUrl = null;
-
-              if (encryptedMediaUrl) {
-                const authRes = await axios.get('https://www.jiosaavn.com/api.php', {
-                  params: {
-                    __call: 'song.generateAuthToken',
-                    _format: 'json',
-                    bitrate: '320',
-                    url: encryptedMediaUrl,
-                    api_version: '4',
-                    ctx: 'web6dot0'
-                  },
-                  timeout: 4000
-                });
-                streamUrl = authRes.data?.auth_url;
-              }
-
-              const durationSec = parseInt(bestMatch.more_info?.duration, 10) || 180;
-              const availableFormats = [
-                {
-                  quality: 'High',
-                  bitrate: '320 kbps',
-                  format: 'mp4',
-                  estimatedSizeMb: estimateSizeMb(320, durationSec),
-                  streamUrl: streamUrl,
-                  formatId: '320'
-                },
-                {
-                  quality: 'Medium',
-                  bitrate: '128 kbps',
-                  format: 'mp4',
-                  estimatedSizeMb: estimateSizeMb(128, durationSec),
-                  streamUrl: streamUrl,
-                  formatId: '128'
-                },
-                {
-                  quality: 'Data Saver',
-                  bitrate: '64 kbps',
-                  format: 'mp4',
-                  estimatedSizeMb: estimateSizeMb(64, durationSec),
-                  streamUrl: streamUrl,
-                  formatId: '64'
-                }
-              ];
-
-              const payloadResponse = {
-                id: `yt_${videoId}`,
-                source: 'jiosaavn-fallback',
-                title: cleanTitle,
-                artist: bestMatch.more_info?.music || authorName,
-                album: bestMatch.more_info?.album || 'YouTube Imports',
-                duration: durationSec,
-                thumbnailUrl: bestMatch.image?.replace('150x150', '500x500') || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-                streamUrl: streamUrl,
-                availableFormats: availableFormats,
-                isYoutubeImport: true
-              };
-
-              console.log(`[Extractor] ✅ Resolved via verified JioSaavn match (${Math.round(highestSim * 100)}% match): "${bestMatch.title}" -> "${payloadResponse.title}"`);
-              return res.json(payloadResponse);
-            } else {
-              console.warn(`[Extractor] ⚠️ JioSaavn candidate did not match "${cleanQuery}" (similarity: ${highestSim.toFixed(2)}). Refusing unrelated song replacement.`);
-            }
-          }
-        }
-      } catch (fallbackErr) {
-        console.warn(`[Extractor] ⚠️ JioSaavn fallback failed: ${fallbackErr.message}`);
-      }
-
-      return res.status(502).json({ error: 'All stream extraction providers failed to resolve direct audio URL.' });
+      console.warn('[Extractor] ⚠️ YouTube metadata may be available, but no same-source media was resolved.');
+      return youtubeUnavailable(
+        res,
+        videoId,
+        'MEDIA_RESOLUTION_FAILED',
+        'The requested YouTube recording is unavailable for playback or download from the configured providers.',
+      );
     });
 
   } catch (err) {
@@ -547,7 +428,6 @@ app.get('/api/youtube/download', async (req, res) => {
     const rawUrl = req.query.url || (req.query.id ? `https://www.youtube.com/watch?v=${req.query.id.replace(/^yt_/, '')}` : null);
     const formatId = req.query.formatId;
     const quality = req.query.quality; // 'High', 'Medium', 'Data Saver'
-    const suppliedStreamUrl = req.query.streamUrl;
 
     if (!rawUrl || typeof rawUrl !== 'string') {
       return res.status(400).json({ error: 'Missing required "url" or "id" query parameter' });
@@ -569,32 +449,6 @@ app.get('/api/youtube/download', async (req, res) => {
       (!formatId && (quality === 'Data Saver' || quality === 'Low')) ? 'webm' : 'm4a';
     const sanitizedFileName = encodeURIComponent(`${customTitle}.${outputExtension}`);
 
-    // Fast-path 0: Direct proxy if a valid streamUrl was supplied in query
-    if (suppliedStreamUrl && typeof suppliedStreamUrl === 'string' && suppliedStreamUrl.startsWith('http') && !suppliedStreamUrl.includes('youtube.com/watch')) {
-      console.log(`[Downloader] ⚡ Streaming via supplied streamUrl for: ${targetUrl}`);
-      try {
-        const directRes = await axios.get(suppliedStreamUrl, {
-          responseType: 'stream',
-          timeout: 120000,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': '*/*'
-          }
-        });
-
-        res.setHeader('Content-Type', directRes.headers['content-type'] || (outputExtension === 'webm' ? 'audio/webm' : 'audio/mp4'));
-        if (directRes.headers['content-length']) {
-          res.setHeader('Content-Length', directRes.headers['content-length']);
-        }
-        res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFileName}"; filename*=UTF-8''${sanitizedFileName}`);
-        res.setHeader('Accept-Ranges', 'bytes');
-        directRes.data.pipe(res);
-        return;
-      } catch (directErr) {
-        console.warn(`[Downloader] ⚠️ Supplied streamUrl failed (${directErr.message}), falling back to stream resolver...`);
-      }
-    }
-
     let formatFilter = 'bestaudio/140/251/139';
     if (formatId && formatId !== 'undefined') {
       formatFilter = `${formatId}/${formatFilter}`;
@@ -609,15 +463,7 @@ app.get('/api/youtube/download', async (req, res) => {
     console.log(`[Downloader] ⬇️ Streaming audio (${formatFilter}) for: ${targetUrl} (File: ${sanitizedFileName})`);
 
     // Strategy 1: Resolve direct audio stream URL with yt-dlp -g
-    execFile(YTDLP_BIN, [
-      ...ytDlpCommonArgs(),
-      '-f', formatFilter,
-      '-g',
-      '--no-playlist',
-      '--no-warnings',
-      '--',
-      targetUrl
-    ], { timeout: 35000 }, async (err, stdout, stderr) => {
+    execFile(YTDLP_BIN, buildYtDlpArgs({ format: formatFilter, getUrl: true }).concat(targetUrl), { timeout: 35000 }, async (err, stdout, stderr) => {
       if (!err && stdout && stdout.trim().startsWith('http')) {
         const directAudioUrl = stdout.trim().split('\n')[0].trim();
         console.log(`[Downloader] 🎯 Resolved direct audio CDN URL via yt-dlp for: ${targetUrl}`);
@@ -631,6 +477,10 @@ app.get('/api/youtube/download', async (req, res) => {
               'Accept': '*/*'
             }
           });
+
+          if (!isLikelyAudioResponse(response)) {
+            throw new Error('direct response was not validated as audio');
+          }
 
           res.setHeader('Content-Type', response.headers['content-type'] || (outputExtension === 'webm' ? 'audio/webm' : 'audio/mp4'));
           if (response.headers['content-length']) {
@@ -660,7 +510,7 @@ app.get('/api/youtube/download', async (req, res) => {
           if (pipedRes.data && pipedRes.data.audioStreams && pipedRes.data.audioStreams.length > 0) {
             const stream = pipedRes.data.audioStreams[0];
             if (stream && stream.url) {
-              console.log(`[Downloader] ⚡ Streaming via Piped fallback (${instance}) for ${targetUrl}`);
+              console.log(`[Downloader] ⚡ Streaming same-source Piped fallback (${instance}) for ${targetUrl}`);
               const streamRes = await axios.get(stream.url, {
                 responseType: 'stream',
                 timeout: 120000,
@@ -669,6 +519,10 @@ app.get('/api/youtube/download', async (req, res) => {
                   'Accept': '*/*'
                 }
               });
+
+              if (!isLikelyAudioResponse(streamRes)) {
+                continue;
+              }
 
               res.setHeader('Content-Type', streamRes.headers['content-type'] || (outputExtension === 'webm' ? 'audio/webm' : 'audio/mp4'));
               if (streamRes.headers['content-length']) {
@@ -686,18 +540,11 @@ app.get('/api/youtube/download', async (req, res) => {
 
       // Strategy 3: Download to a temporary file before sending a success response.
       const temporaryFile = path.join(os.tmpdir(), `aura-${videoId}-${Date.now()}.${outputExtension}`);
-      const ytDlpProcess = spawn(YTDLP_BIN, [
-        ...ytDlpCommonArgs(),
-        '-f', formatFilter,
-        '--buffer-size', '64K',
-        '--audio-quality', '0',
-        '-o', temporaryFile,
-        '--no-playlist',
-        '--no-part',
-        '--no-warnings',
-        '--',
-        targetUrl
-      ]);
+      const ytDlpProcess = spawn(YTDLP_BIN, buildYtDlpArgs({
+        format: formatFilter,
+        outputPath: temporaryFile,
+        extraArgs: ['--buffer-size', '64K', '--audio-quality', '0', '--no-part'],
+      }).concat(targetUrl));
       const extractionTimeout = setTimeout(() => {
         ytDlpProcess.kill('SIGTERM');
       }, 120000);
@@ -708,7 +555,12 @@ app.get('/api/youtube/download', async (req, res) => {
           if (fs.existsSync(temporaryFile)) fs.unlinkSync(temporaryFile);
         } catch (_) {}
         if (!res.headersSent) {
-          res.status(502).json({ error: 'Stream failed', details });
+          youtubeUnavailable(
+            res,
+            videoId,
+            'DOWNLOAD_FAILED',
+            'The requested YouTube recording could not be validated for download.',
+          );
         }
       };
 
@@ -733,7 +585,7 @@ app.get('/api/youtube/download', async (req, res) => {
           fileSize = fs.statSync(temporaryFile).size;
         } catch (_) {}
 
-        if (fileSize === 0) {
+        if (fileSize === 0 || !isReadableAudioFile(temporaryFile)) {
           failDownload('yt-dlp produced an empty audio file');
           return;
         }
@@ -826,15 +678,10 @@ app.get('/api/search/youtube', async (req, res) => {
     }
 
     // Strategy 2: yt-dlp ytsearch dump fallback
-    const ytDlpArgs = [
-      '--dump-single-json',
-      '--no-warnings',
-      '--flat-playlist',
-      '--no-check-certificates',
-      ...ytDlpCommonArgs(),
-      '--',
-      `ytsearch${limit}:${cleanQuery}`,
-    ];
+    const ytDlpArgs = buildYtDlpArgs({
+      dumpJson: true,
+      extraArgs: ['--flat-playlist'],
+    }).concat(`ytsearch${limit}:${cleanQuery}`);
 
     execFile(YTDLP_BIN, ytDlpArgs, { timeout: 12000, maxBuffer: 15 * 1024 * 1024 }, (error, stdout, stderr) => {
       if (!error && stdout) {
@@ -922,6 +769,7 @@ app.get('/api/search', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Aura Player YouTube Extractor Microservice running on port ${PORT}`);
+  console.log(`[Microservice] Server version: ${runtimeDiagnostics.serverVersion}`);
   console.log(`👉 Engine: ${YTDLP_BIN}`);
   console.log(`👉 GET  /api/search/youtube?q=... (Backend Search Proxy)`);
   console.log(`👉 POST /api/youtube/extract (Multi-format HQ/MQ/LQ)`);

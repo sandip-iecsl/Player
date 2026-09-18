@@ -101,9 +101,11 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
 
     final sanitized = YouTubeExtractorService.sanitizeYouTubeLink(trimmed);
 
-    if (!YouTubeExtractorService.isYouTubeUrl(trimmed) && !YouTubeExtractorService.isYouTubeUrl(sanitized)) {
+    if (!YouTubeExtractorService.isYouTubeUrl(trimmed) &&
+        !YouTubeExtractorService.isYouTubeUrl(sanitized)) {
       setState(() {
-        _errorMessage = 'Please enter a valid YouTube, YouTube Music, or youtu.be link';
+        _errorMessage =
+            'Please enter a valid YouTube, YouTube Music, or youtu.be link';
         _extractedSong = null;
         _availableFormats = [];
         _selectedFormat = null;
@@ -139,7 +141,8 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
           });
         } else {
           setState(() {
-            _errorMessage = 'Could not extract audio stream from this link. Make sure the microservice is active.';
+            _errorMessage =
+                'Could not extract audio stream from this link. Make sure the microservice is active.';
             _isExtracting = false;
           });
         }
@@ -147,7 +150,9 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _errorMessage = 'Extraction error: $e';
+          _errorMessage = e is YouTubeSourceUnavailable
+              ? 'This exact YouTube recording is currently unavailable for playback or download.'
+              : 'Extraction error: $e';
           _isExtracting = false;
         });
       }
@@ -177,8 +182,11 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
     Navigator.of(context, rootNavigator: true).pop();
 
     try {
-      debugPrint('[ImportLinkModal] 🎵 Playing imported track: ${song.title} (${_selectedFormat?.bitrate ?? "default"})');
-      await ref.read(audioServiceProvider).loadQueue([song], context: PlaybackContext.search);
+      debugPrint(
+          '[ImportLinkModal] 🎵 Playing imported track: ${song.title} (${_selectedFormat?.bitrate ?? "default"})');
+      await ref
+          .read(audioServiceProvider)
+          .loadQueue([song], context: PlaybackContext.search);
     } catch (e) {
       debugPrint('[ImportLinkModal] ❌ Playback error: $e');
     }
@@ -227,7 +235,8 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                     color: Colors.greenAccent.withAlpha(50),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.check_rounded, color: Colors.greenAccent, size: 16),
+                  child: const Icon(Icons.check_rounded,
+                      color: Colors.greenAccent, size: 16),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -323,7 +332,8 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                       color: Colors.redAccent.withAlpha(35),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: const Icon(Icons.link_rounded, color: Colors.redAccent, size: 22),
+                    child: const Icon(Icons.link_rounded,
+                        color: Colors.redAccent, size: 22),
                   ),
                   const SizedBox(width: 12),
                   const Expanded(
@@ -350,7 +360,8 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                   ),
                   IconButton(
                     icon: const Icon(Icons.close, color: Colors.white60),
-                    onPressed: () => Navigator.of(context, rootNavigator: true).pop(),
+                    onPressed: () =>
+                        Navigator.of(context, rootNavigator: true).pop(),
                   ),
                 ],
               ),
@@ -372,19 +383,23 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                       child: TextField(
                         controller: _urlController,
                         focusNode: _focusNode,
-                        style: const TextStyle(color: Colors.white, fontSize: 14),
+                        style:
+                            const TextStyle(color: Colors.white, fontSize: 14),
                         decoration: InputDecoration(
                           hintText: 'Paste YouTube / YouTube Music URL...',
-                          hintStyle: TextStyle(color: Colors.white.withAlpha(90), fontSize: 13),
+                          hintStyle: TextStyle(
+                              color: Colors.white.withAlpha(90), fontSize: 13),
                           border: InputBorder.none,
-                          contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                          contentPadding:
+                              const EdgeInsets.symmetric(vertical: 14),
                         ),
                         onSubmitted: (val) => _extractLink(val),
                       ),
                     ),
                     if (_urlController.text.isNotEmpty)
                       IconButton(
-                        icon: const Icon(Icons.clear, color: Colors.white38, size: 18),
+                        icon: const Icon(Icons.clear,
+                            color: Colors.white38, size: 18),
                         onPressed: () {
                           _urlController.clear();
                           setState(() {
@@ -400,13 +415,19 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                       child: TextButton.icon(
                         style: TextButton.styleFrom(
                           backgroundColor: Colors.white.withAlpha(20),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10)),
                         ),
-                        icon: const Icon(Icons.paste_rounded, size: 15, color: Colors.white70),
+                        icon: const Icon(Icons.paste_rounded,
+                            size: 15, color: Colors.white70),
                         label: const Text(
                           'Paste',
-                          style: TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w600),
+                          style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600),
                         ),
                         onPressed: _pasteFromClipboard,
                       ),
@@ -427,13 +448,15 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                         height: 32,
                         child: CircularProgressIndicator(
                           strokeWidth: 3,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.redAccent),
+                          valueColor:
+                              AlwaysStoppedAnimation<Color>(Colors.redAccent),
                         ),
                       ),
                       const SizedBox(height: 12),
                       Text(
                         'Resolving multi-format audio streams & bitrates...',
-                        style: TextStyle(color: Colors.white.withAlpha(150), fontSize: 13),
+                        style: TextStyle(
+                            color: Colors.white.withAlpha(150), fontSize: 13),
                       ),
                     ],
                   ),
@@ -451,12 +474,14 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline, color: Colors.redAccent, size: 18),
+                      const Icon(Icons.error_outline,
+                          color: Colors.redAccent, size: 18),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           _errorMessage!,
-                          style: const TextStyle(color: Colors.redAccent, fontSize: 12),
+                          style: const TextStyle(
+                              color: Colors.redAccent, fontSize: 12),
                         ),
                       ),
                     ],
@@ -485,9 +510,12 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                               ? Image.network(
                                   _extractedSong!.albumArt!,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => const Icon(Icons.music_note, color: Colors.white38),
+                                  errorBuilder: (_, __, ___) => const Icon(
+                                      Icons.music_note,
+                                      color: Colors.white38),
                                 )
-                              : const Icon(Icons.music_note, color: Colors.white38),
+                              : const Icon(Icons.music_note,
+                                  color: Colors.white38),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -519,16 +547,19 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                             const SizedBox(height: 4),
                             Row(
                               children: [
-                                const Icon(Icons.timer_outlined, color: Colors.white38, size: 12),
+                                const Icon(Icons.timer_outlined,
+                                    color: Colors.white38, size: 12),
                                 const SizedBox(width: 4),
                                 Text(
                                   _formatDuration(_extractedSong!.duration),
-                                  style: const TextStyle(color: Colors.white38, fontSize: 11),
+                                  style: const TextStyle(
+                                      color: Colors.white38, fontSize: 11),
                                 ),
                                 if (_selectedFormat != null) ...[
                                   const SizedBox(width: 8),
                                   Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
                                       color: Colors.redAccent.withAlpha(35),
                                       borderRadius: BorderRadius.circular(6),
@@ -570,23 +601,27 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                   const SizedBox(height: 8),
                   Column(
                     children: _availableFormats.map((format) {
-                      final isSelected = _selectedFormat?.formatId == format.formatId ||
-                          _selectedFormat?.quality == format.quality;
+                      final isSelected =
+                          _selectedFormat?.formatId == format.formatId ||
+                              _selectedFormat?.quality == format.quality;
 
                       String subtitleText;
                       IconData qualityIcon;
                       Color tierAccentColor;
 
                       if (format.isHighQuality) {
-                        subtitleText = 'Best audio fidelity (${format.estimatedSizeMb}/song)';
+                        subtitleText =
+                            'Best audio fidelity (${format.estimatedSizeMb}/song)';
                         qualityIcon = Icons.high_quality_rounded;
                         tierAccentColor = const Color(0xFF00E676);
                       } else if (format.isMediumQuality) {
-                        subtitleText = 'Balanced quality & storage (${format.estimatedSizeMb}/song)';
+                        subtitleText =
+                            'Balanced quality & storage (${format.estimatedSizeMb}/song)';
                         qualityIcon = Icons.graphic_eq_rounded;
                         tierAccentColor = const Color(0xFF00B0FF);
                       } else {
-                        subtitleText = 'Minimal size & fast download (${format.estimatedSizeMb}/song)';
+                        subtitleText =
+                            'Minimal size & fast download (${format.estimatedSizeMb}/song)';
                         qualityIcon = Icons.data_saver_on_rounded;
                         tierAccentColor = const Color(0xFFFF9100);
                       }
@@ -596,12 +631,17 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                         borderRadius: BorderRadius.circular(12),
                         child: Container(
                           margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
                           decoration: BoxDecoration(
-                            color: isSelected ? tierAccentColor.withAlpha(25) : const Color(0xFF1E1E26),
+                            color: isSelected
+                                ? tierAccentColor.withAlpha(25)
+                                : const Color(0xFF1E1E26),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: isSelected ? tierAccentColor.withAlpha(180) : Colors.white.withAlpha(20),
+                              color: isSelected
+                                  ? tierAccentColor.withAlpha(180)
+                                  : Colors.white.withAlpha(20),
                               width: isSelected ? 1.5 : 1,
                             ),
                           ),
@@ -609,7 +649,9 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                             children: [
                               Icon(
                                 qualityIcon,
-                                color: isSelected ? tierAccentColor : Colors.white54,
+                                color: isSelected
+                                    ? tierAccentColor
+                                    : Colors.white54,
                                 size: 20,
                               ),
                               const SizedBox(width: 12),
@@ -622,7 +664,9 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                                         Text(
                                           '${format.bitrate} (${format.quality})',
                                           style: TextStyle(
-                                            color: isSelected ? Colors.white : Colors.white70,
+                                            color: isSelected
+                                                ? Colors.white
+                                                : Colors.white70,
                                             fontWeight: FontWeight.w600,
                                             fontSize: 13,
                                           ),
@@ -630,10 +674,13 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                                         if (isSelected) ...[
                                           const SizedBox(width: 6),
                                           Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 5, vertical: 1),
                                             decoration: BoxDecoration(
-                                              color: tierAccentColor.withAlpha(50),
-                                              borderRadius: BorderRadius.circular(4),
+                                              color:
+                                                  tierAccentColor.withAlpha(50),
+                                              borderRadius:
+                                                  BorderRadius.circular(4),
                                             ),
                                             child: Text(
                                               'DEFAULT',
@@ -664,13 +711,18 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                                 decoration: BoxDecoration(
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: isSelected ? tierAccentColor : Colors.white38,
+                                    color: isSelected
+                                        ? tierAccentColor
+                                        : Colors.white38,
                                     width: 2,
                                   ),
-                                  color: isSelected ? tierAccentColor : Colors.transparent,
+                                  color: isSelected
+                                      ? tierAccentColor
+                                      : Colors.transparent,
                                 ),
                                 child: isSelected
-                                    ? const Icon(Icons.check, size: 14, color: Colors.black)
+                                    ? const Icon(Icons.check,
+                                        size: 14, color: Colors.black)
                                     : null,
                               ),
                             ],
@@ -692,13 +744,15 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                           backgroundColor: Colors.white.withAlpha(20),
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
                           elevation: 0,
                         ),
                         icon: const Icon(Icons.play_arrow_rounded, size: 22),
                         label: const Text(
                           'Play Now',
-                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          style: TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                         onPressed: _playNow,
                       ),
@@ -711,7 +765,8 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                           backgroundColor: Colors.redAccent,
                           foregroundColor: Colors.white,
                           padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
                           elevation: 4,
                           shadowColor: Colors.redAccent.withAlpha(100),
                         ),
@@ -720,9 +775,13 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                                 width: 18,
                                 height: 18,
                                 child: CircularProgressIndicator(
-                                  value: _downloadProgress > 0 ? _downloadProgress : null,
+                                  value: _downloadProgress > 0
+                                      ? _downloadProgress
+                                      : null,
                                   strokeWidth: 2,
-                                  valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+                                  valueColor:
+                                      const AlwaysStoppedAnimation<Color>(
+                                          Colors.white),
                                 ),
                               )
                             : const Icon(Icons.download_rounded, size: 20),
@@ -730,7 +789,8 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                           _isDownloading
                               ? '${(_downloadProgress * 100).toStringAsFixed(0)}%'
                               : 'Download',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold, fontSize: 14),
                         ),
                         onPressed: _isDownloading ? null : _downloadTrack,
                       ),
