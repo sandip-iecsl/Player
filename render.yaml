@@ -1,0 +1,22 @@
+﻿services:
+  - type: web
+    name: aura-youtube-extractor
+    runtime: docker
+    rootDir: youtube-extractor-microservice
+    dockerfilePath: youtube-extractor-microservice/Dockerfile
+    region: singapore
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: NODE_ENV
+        value: production
+      - key: YOUTUBE_API_KEY
+        sync: false
+      - key: YOUTUBE_COOKIES_BASE64
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DATABASE
+        value: aura_player

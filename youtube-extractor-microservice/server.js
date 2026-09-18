@@ -235,11 +235,7 @@ app.get('/health', (req, res) => {
     status: 'online',
     service: 'Aura Player YouTube Extractor Microservice',
     engine: `yt-dlp (${YTDLP_BIN})`,
-<<<<<<< HEAD
-    youtubeCookiesConfigured: hasYouTubeCookies,
-=======
     ytDlpCookiesConfigured: Boolean(ytCookiesPath),
->>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
     supportedQualities: ['High (320 kbps)', 'Medium (128 kbps)', 'Data Saver (64 kbps)'],
     timestamp: new Date().toISOString()
   });
@@ -646,12 +642,7 @@ app.get('/api/youtube/download', async (req, res) => {
 
     // Strategy 1: Resolve direct audio stream URL with yt-dlp -g
     execFile(YTDLP_BIN, [
-<<<<<<< HEAD
-      ...getYouTubeCookieArgs(),
-      '--extractor-args', 'youtube:player_client=android_music,android,ios,web',
-=======
       ...ytDlpCommonArgs(),
->>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
       '-f', formatFilter,
       '-g',
       '--no-playlist',
@@ -731,12 +722,7 @@ app.get('/api/youtube/download', async (req, res) => {
       res.setHeader('Accept-Ranges', 'bytes');
 
       const ytDlpProcess = spawn(YTDLP_BIN, [
-<<<<<<< HEAD
-        ...getYouTubeCookieArgs(),
-        '--extractor-args', 'youtube:player_client=android_music,android,ios,web',
-=======
         ...ytDlpCommonArgs(),
->>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
         '-f', formatFilter,
         '--buffer-size', '64K',
         '--audio-quality', '0',
