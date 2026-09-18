@@ -17,8 +17,8 @@ class AudioHardwareSpecs {
   final String bitrate;
 
   const AudioHardwareSpecs({
-    this.sampleRateHz = 48000,
-    this.bitDepth = 24,
+    this.sampleRateHz = 0,
+    this.bitDepth = 0,
     this.isBitPerfectActive = false,
     this.isSupported = false,
     this.isAndroid14OrHigher = false,
@@ -30,6 +30,7 @@ class AudioHardwareSpecs {
 
   /// Formatted Sample Rate display (e.g. "44.1 kHz", "48.0 kHz", "96.0 kHz", "192.0 kHz", "2.8 MHz")
   String get sampleRateDisplay {
+    if (sampleRateHz <= 0) return 'Unknown';
     if (sampleRateHz >= 1000000) {
       final mhz = (sampleRateHz / 1000000.0).toStringAsFixed(1);
       return '$mhz MHz DSD';
@@ -39,7 +40,9 @@ class AudioHardwareSpecs {
   }
 
   /// Formatted Audiophile specs (e.g. "48.0 kHz / 24-bit")
-  String get qualityBadgeText => '$sampleRateDisplay / $bitDepth-bit';
+  String get qualityBadgeText => bitDepth > 0
+      ? '$sampleRateDisplay / $bitDepth-bit'
+      : '$sampleRateDisplay / source depth unknown';
 
   AudioHardwareSpecs copyWith({
     int? sampleRateHz,
@@ -213,7 +216,9 @@ class BitPerfectService {
     if (title.contains('32bit') || title.contains('dsd')) {
       return 32;
     }
-    return 24; // Default audiophile container bit depth
+    // Lossy AAC/Opus streams do not carry a meaningful source bit depth.
+    // Do not present a guessed PCM depth as if it were source fidelity.
+    return 0;
   }
 
   String _inferCodec(Song song) {

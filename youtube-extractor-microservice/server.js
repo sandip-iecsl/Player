@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const os = require('os');
 const fs = require('fs');
 const { spawn, execFile } = require('child_process');
 const axios = require('axios');
@@ -57,6 +58,43 @@ const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.|music\.|m\.)?(youtube\.com\/(watch\
 const LOCAL_YTDLP = path.join(__dirname, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
 const YTDLP_BIN = fs.existsSync(LOCAL_YTDLP) ? LOCAL_YTDLP : 'yt-dlp';
 
+// Render can provide an authenticated Netscape cookie file through a secret.
+// Prefer YOUTUBE_COOKIES_BASE64 so credentials are never committed or logged.
+const COOKIE_RUNTIME_PATH = path.join(os.tmpdir(), 'aura-youtube-cookies.txt');
+let ytCookiesPath = null;
+
+function prepareYtDlpCookies() {
+  const configuredFile = process.env.YOUTUBE_COOKIES_FILE?.trim();
+  if (configuredFile && fs.existsSync(configuredFile)) {
+    ytCookiesPath = configuredFile;
+    return;
+  }
+
+  const encodedCookies = process.env.YOUTUBE_COOKIES_BASE64?.trim();
+  if (!encodedCookies) return;
+
+  try {
+    const decodedCookies = Buffer.from(encodedCookies, 'base64');
+    if (decodedCookies.length === 0) throw new Error('empty cookie payload');
+    fs.writeFileSync(COOKIE_RUNTIME_PATH, decodedCookies, { mode: 0o600 });
+    ytCookiesPath = COOKIE_RUNTIME_PATH;
+  } catch (error) {
+    console.warn(`[YouTube] Cookie secret could not be loaded: ${error.message}`);
+  }
+}
+
+prepareYtDlpCookies();
+
+function ytDlpCommonArgs() {
+  const args = [
+    '--remote-components', 'ejs:github',
+    '--extractor-args', 'youtube:player_client=tv_embedded,mweb,android,ios',
+    '--extractor-args', 'youtube:player_skip=webpage,configs',
+  ];
+  if (ytCookiesPath) args.push('--cookies', ytCookiesPath);
+  return args;
+}
+
 // Helper to clean, sanitize, and re-format YouTube Mix / Radio & Standard URLs
 function normalizeYouTubeUrl(inputUrl) {
   try {
@@ -103,17 +141,56 @@ function normalizeYouTubeUrl(inputUrl) {
 }
 
 /**
- * Clean track title by stripping standard YouTube clutter
+ * Deep clean track title: strips emojis, handles, hashtags, video tags, status fluff
  */
 function cleanTrackTitle(rawTitle) {
   if (!rawTitle) return 'YouTube Audio Track';
   return rawTitle
-    .replace(/\[\s*(Official\s*(Music\s*)?Video|Audio|HD|4K|Lyrics|Visualizer|Live|Full Song|Video Song|Audio Song|Video)\s*\]/gi, '')
-    .replace(/\(\s*(Official\s*(Music\s*)?Video|Audio|HD|4K|Lyrics|Visualizer|Live|Full Song|Video Song|Audio Song|Video)\s*\)/gi, '')
-    .replace(/\|\s*(Official\s*(Music\s*)?Video|Audio|HD|4K|Lyrics|Visualizer|Live|Full Song).*$/gi, '')
+    .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{1FA70}-\u{1FAFF}]|[\u{200D}\u{FE0F}]/gu, '')
+    .replace(/#[\w\u0900-\u097F\u0980-\u09FF]+/g, '')
+    .replace(/@[\w\u0900-\u097F\u0980-\u09FF_.]+/g, '')
+    .replace(/\[\s*(Official\s*(Music\s*)?Video|Audio|HD|4K|Lyrics|Visualizer|Live|Full Song|Video Song|Audio Song|Video|Status|Bengali Status|WhatsApp Status|Lyrical)\s*\]/gi, '')
+    .replace(/\(\s*(Official\s*(Music\s*)?Video|Audio|HD|4K|Lyrics|Visualizer|Live|Full Song|Video Song|Audio Song|Video|Status|Bengali Status|WhatsApp Status|Lyrical)\s*\)/gi, '')
+    .replace(/\|\s*(Official\s*(Music\s*)?Video|Audio|HD|4K|Lyrics|Visualizer|Live|Full Song|Status|WhatsApp|Bengali).*$/gi, '')
+    .replace(/\|\|.*$/g, '')
     .replace(/【.*?】/g, '')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Extract clean query words suitable for high-accuracy search matchers
+ */
+function extractCleanSongQuery(rawTitle, rawArtist) {
+  let cleaned = cleanTrackTitle(rawTitle);
+  // Remove trailing pipe sections or parentheses
+  cleaned = cleaned.replace(/\|.*$/, '').replace(/\[.*?\]/g, '').replace(/\(.*?\)/g, '').trim();
+  if (cleaned.includes(' - ')) {
+    const parts = cleaned.split(' - ');
+    return `${parts[0].trim()} ${parts[1].trim()}`;
+  }
+  if (rawArtist && !cleaned.toLowerCase().includes(rawArtist.toLowerCase())) {
+    return `${cleaned} ${rawArtist}`.trim();
+  }
+  return cleaned;
+}
+
+/**
+ * Token-based title similarity score between 0.0 and 1.0
+ */
+function calculateTitleSimilarity(query, candidateTitle) {
+  if (!query || !candidateTitle) return 0;
+  const qTokens = query.toLowerCase().replace(/[^a-z0-9\u0900-\u097F\u0980-\u09FF]/g, ' ').split(/\s+/).filter(t => t.length >= 2);
+  const cTokens = candidateTitle.toLowerCase().replace(/[^a-z0-9\u0900-\u097F\u0980-\u09FF]/g, ' ').split(/\s+/).filter(t => t.length >= 2);
+  if (qTokens.length === 0 || cTokens.length === 0) return 0;
+
+  let matches = 0;
+  for (const qt of qTokens) {
+    if (cTokens.some(ct => ct === qt || ct.includes(qt) || qt.includes(ct))) {
+      matches++;
+    }
+  }
+  return matches / qTokens.length;
 }
 
 const STRICT_VIDEO_ID_REGEX = /^[a-zA-Z0-9_\-]{11}$/;
@@ -158,7 +235,11 @@ app.get('/health', (req, res) => {
     status: 'online',
     service: 'Aura Player YouTube Extractor Microservice',
     engine: `yt-dlp (${YTDLP_BIN})`,
+<<<<<<< HEAD
     youtubeCookiesConfigured: hasYouTubeCookies,
+=======
+    ytDlpCookiesConfigured: Boolean(ytCookiesPath),
+>>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
     supportedQualities: ['High (320 kbps)', 'Medium (128 kbps)', 'Data Saver (64 kbps)'],
     timestamp: new Date().toISOString()
   });
@@ -195,7 +276,7 @@ app.post('/api/youtube/extract', async (req, res) => {
       '--no-playlist',
       '--no-check-certificates',
       '-f', 'bestaudio/140/251/139/best',
-      '--extractor-args', 'youtube:player_client=android_music,android,ios,web',
+      ...ytDlpCommonArgs(),
       '--',
       targetUrl
     ];
@@ -272,59 +353,103 @@ app.post('/api/youtube/extract', async (req, res) => {
         }
       }
 
-      console.warn(`[Extractor] ⚠️ yt-dlp failed or timed out (${error?.message || stderr}). Trying Piped streaming fallback...`);
+      console.warn(`[Extractor] ⚠️ yt-dlp failed or timed out (${error?.message || stderr}). Trying Piped & Invidious streaming fallback...`);
 
-      // Strategy 2: Piped API Multi-Instance Fallback
-      const pipedInstances = [
-        'https://pipedapi.kavin.rocks',
-        'https://api.piped.private.coffee',
-        'https://pipedapi.leptons.xyz'
+      // Strategy 2: Multi-Instance Piped & Invidious API Fallback
+      const streamingInstances = [
+        { url: 'https://pipedapi.leptons.xyz', type: 'piped' },
+        { url: 'https://piped-api.lunar.icu', type: 'piped' },
+        { url: 'https://api.piped.privacydev.net', type: 'piped' },
+        { url: 'https://pipedapi.tokhmi.xyz', type: 'piped' },
+        { url: 'https://inv.tux.pizza/api/v1/videos', type: 'invidious' },
+        { url: 'https://invidious.nerdvpn.de/api/v1/videos', type: 'invidious' },
       ];
 
-      for (const instance of pipedInstances) {
+      for (const instance of streamingInstances) {
         try {
-          const pipedRes = await axios.get(`${instance}/streams/${videoId}`, { timeout: 6000 });
-          if (pipedRes.data && pipedRes.data.audioStreams && pipedRes.data.audioStreams.length > 0) {
-            const streams = pipedRes.data.audioStreams;
-            const title = cleanTrackTitle(pipedRes.data.title || 'YouTube Audio');
-            const uploader = pipedRes.data.uploader || 'YouTube Artist';
-            const durationSec = pipedRes.data.duration || 180;
-            const thumbnail = pipedRes.data.thumbnailUrl || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+          if (instance.type === 'piped') {
+            const pipedRes = await axios.get(`${instance.url}/streams/${videoId}`, { timeout: 6000 });
+            if (pipedRes.data && pipedRes.data.audioStreams && pipedRes.data.audioStreams.length > 0) {
+              const streams = pipedRes.data.audioStreams;
+              const title = cleanTrackTitle(pipedRes.data.title || 'YouTube Audio');
+              const uploader = pipedRes.data.uploader || 'YouTube Artist';
+              const durationSec = pipedRes.data.duration || 180;
+              const thumbnail = pipedRes.data.thumbnailUrl || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
-            const formats = streams.map(st => {
-              const abr = st.bitrate ? Math.round(st.bitrate / 1000) : 128;
-              const qualityTier = abr >= 160 ? 'High' : (abr >= 96 ? 'Medium' : 'Data Saver');
-              return {
-                quality: qualityTier,
-                bitrate: `${abr} kbps`,
-                format: (st.format || 'm4a').toLowerCase().replace('webm', 'opus'),
-                estimatedSizeMb: estimateSizeMb(abr, durationSec),
-                streamUrl: st.url,
-                formatId: String(st.format || '140')
+              const formats = streams.map(st => {
+                const abr = st.bitrate ? Math.round(st.bitrate / 1000) : 128;
+                const qualityTier = abr >= 160 ? 'High' : (abr >= 96 ? 'Medium' : 'Data Saver');
+                return {
+                  quality: qualityTier,
+                  bitrate: `${abr} kbps`,
+                  format: (st.format || 'm4a').toLowerCase().replace('webm', 'opus'),
+                  estimatedSizeMb: estimateSizeMb(abr, durationSec),
+                  streamUrl: st.url,
+                  formatId: String(st.format || '140')
+                };
+              });
+
+              const payloadResponse = {
+                id: `yt_${videoId}`,
+                title: title,
+                artist: uploader,
+                album: 'YouTube Imports',
+                duration: durationSec,
+                thumbnailUrl: thumbnail,
+                streamUrl: formats[0].streamUrl,
+                availableFormats: formats,
+                isYoutubeImport: true
               };
-            });
 
-            const payloadResponse = {
-              id: `yt_${videoId}`,
-              title: title,
-              artist: uploader,
-              album: 'YouTube Imports',
-              duration: durationSec,
-              thumbnailUrl: thumbnail,
-              streamUrl: formats[0].streamUrl,
-              availableFormats: formats,
-              isYoutubeImport: true
-            };
+              console.log(`[Extractor] ⚡ Resolved via Piped instance (${instance.url}) for "${title}"`);
+              return res.json(payloadResponse);
+            }
+          } else if (instance.type === 'invidious') {
+            const invRes = await axios.get(`${instance.url}/${videoId}`, { timeout: 6000 });
+            if (invRes.data && invRes.data.adaptiveFormats && invRes.data.adaptiveFormats.length > 0) {
+              const audioFormats = invRes.data.adaptiveFormats.filter(f => f.type && f.type.startsWith('audio/'));
+              if (audioFormats.length > 0) {
+                const title = cleanTrackTitle(invRes.data.title || 'YouTube Audio');
+                const author = invRes.data.author || 'YouTube Artist';
+                const durationSec = invRes.data.lengthSeconds || 180;
+                const thumbnail = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
-            console.log(`[Extractor] ⚡ Resolved via Piped instance (${instance}) for "${title}"`);
-            return res.json(payloadResponse);
+                const formats = audioFormats.map(st => {
+                  const abr = st.bitrate ? Math.round(st.bitrate / 1000) : 128;
+                  const qualityTier = abr >= 160 ? 'High' : (abr >= 96 ? 'Medium' : 'Data Saver');
+                  return {
+                    quality: qualityTier,
+                    bitrate: `${abr} kbps`,
+                    format: (st.container || 'm4a').toLowerCase().replace('webm', 'opus'),
+                    estimatedSizeMb: estimateSizeMb(abr, durationSec),
+                    streamUrl: st.url,
+                    formatId: String(st.itag || '140')
+                  };
+                });
+
+                const payloadResponse = {
+                  id: `yt_${videoId}`,
+                  title: title,
+                  artist: author,
+                  album: 'YouTube Imports',
+                  duration: durationSec,
+                  thumbnailUrl: thumbnail,
+                  streamUrl: formats[0].streamUrl,
+                  availableFormats: formats,
+                  isYoutubeImport: true
+                };
+
+                console.log(`[Extractor] ⚡ Resolved via Invidious instance (${instance.url}) for "${title}"`);
+                return res.json(payloadResponse);
+              }
+            }
           }
-        } catch (pipedErr) {}
+        } catch (streamErr) {}
       }
 
-      console.warn(`[Extractor] ⚠️ Piped failed. Trying YouTube oEmbed + JioSaavn fallback...`);
+      console.warn(`[Extractor] ⚠️ Piped & Invidious failed. Trying YouTube oEmbed + JioSaavn fallback...`);
 
-      // Strategy 3: YouTube oEmbed + JioSaavn Instant Fallback Matcher
+      // Strategy 3: YouTube oEmbed + High-Accuracy JioSaavn Matcher
       try {
         const oembedRes = await axios.get('https://www.youtube.com/oembed', {
           params: { url: targetUrl, format: 'json' },
@@ -335,9 +460,9 @@ app.post('/api/youtube/extract', async (req, res) => {
           const rawTitle = oembedRes.data.title;
           const cleanTitle = cleanTrackTitle(rawTitle);
           const authorName = oembedRes.data.author_name || 'YouTube Artist';
+          const cleanQuery = extractCleanSongQuery(rawTitle, authorName);
 
-          let query = cleanTitle.replace(/\s*(mashup|mix|remix|edit|ft\.|feat\.).*$/gi, '').trim();
-          if (!query) query = cleanTitle;
+          console.log(`[Extractor] 🔎 Searching JioSaavn for clean extracted query: "${cleanQuery}"`);
 
           const saavnRes = await axios.get('https://www.jiosaavn.com/api.php', {
             params: {
@@ -346,76 +471,94 @@ app.post('/api/youtube/extract', async (req, res) => {
               _marker: '0',
               api_version: '4',
               ctx: 'web6dot0',
-              n: '5',
+              n: '10',
               p: '1',
-              q: query
+              q: cleanQuery
             },
             timeout: 5000
           });
 
           const results = saavnRes.data?.results || [];
           if (results.length > 0) {
-            const topMatch = results[0];
-            const encryptedMediaUrl = topMatch.more_info?.encrypted_media_url;
-            let streamUrl = null;
+            // Find best matching song by title similarity
+            let bestMatch = null;
+            let highestSim = 0;
 
-            if (encryptedMediaUrl) {
-              const authRes = await axios.get('https://www.jiosaavn.com/api.php', {
-                params: {
-                  __call: 'song.generateAuthToken',
-                  _format: 'json',
-                  bitrate: '320',
-                  url: encryptedMediaUrl,
-                  api_version: '4',
-                  ctx: 'web6dot0'
-                },
-                timeout: 4000
-              });
-              streamUrl = authRes.data?.auth_url;
+            for (const candidate of results) {
+              const candTitle = cleanTrackTitle(candidate.title || candidate.song || '');
+              const sim = calculateTitleSimilarity(cleanQuery, candTitle);
+              if (sim > highestSim) {
+                highestSim = sim;
+                bestMatch = candidate;
+              }
             }
 
-            const durationSec = parseInt(topMatch.more_info?.duration, 10) || 180;
-            const availableFormats = [
-              {
-                quality: 'High',
-                bitrate: '320 kbps',
-                format: 'mp4',
-                estimatedSizeMb: estimateSizeMb(320, durationSec),
-                streamUrl: streamUrl,
-                formatId: '320'
-              },
-              {
-                quality: 'Medium',
-                bitrate: '128 kbps',
-                format: 'mp4',
-                estimatedSizeMb: estimateSizeMb(128, durationSec),
-                streamUrl: streamUrl,
-                formatId: '128'
-              },
-              {
-                quality: 'Data Saver',
-                bitrate: '64 kbps',
-                format: 'mp4',
-                estimatedSizeMb: estimateSizeMb(64, durationSec),
-                streamUrl: streamUrl,
-                formatId: '64'
+            // Accept match only if similarity score is adequate (>= 0.40)
+            if (bestMatch && highestSim >= 0.40) {
+              const encryptedMediaUrl = bestMatch.more_info?.encrypted_media_url;
+              let streamUrl = null;
+
+              if (encryptedMediaUrl) {
+                const authRes = await axios.get('https://www.jiosaavn.com/api.php', {
+                  params: {
+                    __call: 'song.generateAuthToken',
+                    _format: 'json',
+                    bitrate: '320',
+                    url: encryptedMediaUrl,
+                    api_version: '4',
+                    ctx: 'web6dot0'
+                  },
+                  timeout: 4000
+                });
+                streamUrl = authRes.data?.auth_url;
               }
-            ];
 
-            const payloadResponse = {
-              id: `yt_${videoId}`,
-              title: cleanTitle,
-              artist: topMatch.more_info?.music || authorName,
-              album: topMatch.more_info?.album || 'YouTube Imports',
-              duration: durationSec,
-              thumbnailUrl: topMatch.image?.replace('150x150', '500x500') || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
-              streamUrl: streamUrl,
-              availableFormats: availableFormats,
-              isYoutubeImport: true
-            };
+              const durationSec = parseInt(bestMatch.more_info?.duration, 10) || 180;
+              const availableFormats = [
+                {
+                  quality: 'High',
+                  bitrate: '320 kbps',
+                  format: 'mp4',
+                  estimatedSizeMb: estimateSizeMb(320, durationSec),
+                  streamUrl: streamUrl,
+                  formatId: '320'
+                },
+                {
+                  quality: 'Medium',
+                  bitrate: '128 kbps',
+                  format: 'mp4',
+                  estimatedSizeMb: estimateSizeMb(128, durationSec),
+                  streamUrl: streamUrl,
+                  formatId: '128'
+                },
+                {
+                  quality: 'Data Saver',
+                  bitrate: '64 kbps',
+                  format: 'mp4',
+                  estimatedSizeMb: estimateSizeMb(64, durationSec),
+                  streamUrl: streamUrl,
+                  formatId: '64'
+                }
+              ];
 
-            console.log(`[Extractor] ✅ Resolved via JioSaavn fallback with 3 tiers: "${payloadResponse.title}"`);
-            return res.json(payloadResponse);
+              const payloadResponse = {
+                id: `yt_${videoId}`,
+                source: 'jiosaavn-fallback',
+                title: cleanTitle,
+                artist: bestMatch.more_info?.music || authorName,
+                album: bestMatch.more_info?.album || 'YouTube Imports',
+                duration: durationSec,
+                thumbnailUrl: bestMatch.image?.replace('150x150', '500x500') || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+                streamUrl: streamUrl,
+                availableFormats: availableFormats,
+                isYoutubeImport: true
+              };
+
+              console.log(`[Extractor] ✅ Resolved via verified JioSaavn match (${Math.round(highestSim * 100)}% match): "${bestMatch.title}" -> "${payloadResponse.title}"`);
+              return res.json(payloadResponse);
+            } else {
+              console.warn(`[Extractor] ⚠️ JioSaavn candidate did not match "${cleanQuery}" (similarity: ${highestSim.toFixed(2)}). Refusing unrelated song replacement.`);
+            }
           }
         }
       } catch (fallbackErr) {
@@ -440,6 +583,7 @@ app.get('/api/youtube/download', async (req, res) => {
     const rawUrl = req.query.url || (req.query.id ? `https://www.youtube.com/watch?v=${req.query.id.replace(/^yt_/, '')}` : null);
     const formatId = req.query.formatId;
     const quality = req.query.quality; // 'High', 'Medium', 'Data Saver'
+    const suppliedStreamUrl = req.query.streamUrl;
 
     if (!rawUrl || typeof rawUrl !== 'string') {
       return res.status(400).json({ error: 'Missing required "url" or "id" query parameter' });
@@ -457,6 +601,36 @@ app.get('/api/youtube/download', async (req, res) => {
       : cleanUrl;
     const customTitle = req.query.title ? cleanTrackTitle(req.query.title) : `yt_${videoId}`;
 
+    const outputExtension = formatId === '249' || formatId === '251' ||
+      (!formatId && (quality === 'Data Saver' || quality === 'Low')) ? 'webm' : 'm4a';
+    const sanitizedFileName = encodeURIComponent(`${customTitle}.${outputExtension}`);
+
+    // Fast-path 0: Direct proxy if a valid streamUrl was supplied in query
+    if (suppliedStreamUrl && typeof suppliedStreamUrl === 'string' && suppliedStreamUrl.startsWith('http') && !suppliedStreamUrl.includes('youtube.com/watch')) {
+      console.log(`[Downloader] ⚡ Streaming via supplied streamUrl for: ${targetUrl}`);
+      try {
+        const directRes = await axios.get(suppliedStreamUrl, {
+          responseType: 'stream',
+          timeout: 120000,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': '*/*'
+          }
+        });
+
+        res.setHeader('Content-Type', directRes.headers['content-type'] || (outputExtension === 'webm' ? 'audio/webm' : 'audio/mp4'));
+        if (directRes.headers['content-length']) {
+          res.setHeader('Content-Length', directRes.headers['content-length']);
+        }
+        res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFileName}"; filename*=UTF-8''${sanitizedFileName}`);
+        res.setHeader('Accept-Ranges', 'bytes');
+        directRes.data.pipe(res);
+        return;
+      } catch (directErr) {
+        console.warn(`[Downloader] ⚠️ Supplied streamUrl failed (${directErr.message}), falling back to stream resolver...`);
+      }
+    }
+
     let formatFilter = 'bestaudio/140/251/139';
     if (formatId && formatId !== 'undefined') {
       formatFilter = `${formatId}/${formatFilter}`;
@@ -468,16 +642,16 @@ app.get('/api/youtube/download', async (req, res) => {
       formatFilter = 'bestaudio/140/251/139';
     }
 
-    const outputExtension = formatId === '249' || formatId === '251' ||
-      (!formatId && (quality === 'Data Saver' || quality === 'Low')) ? 'webm' : 'm4a';
-    const sanitizedFileName = encodeURIComponent(`${customTitle}.${outputExtension}`);
-
     console.log(`[Downloader] ⬇️ Streaming audio (${formatFilter}) for: ${targetUrl} (File: ${sanitizedFileName})`);
 
     // Strategy 1: Resolve direct audio stream URL with yt-dlp -g
     execFile(YTDLP_BIN, [
+<<<<<<< HEAD
       ...getYouTubeCookieArgs(),
       '--extractor-args', 'youtube:player_client=android_music,android,ios,web',
+=======
+      ...ytDlpCommonArgs(),
+>>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
       '-f', formatFilter,
       '-g',
       '--no-playlist',
@@ -557,8 +731,12 @@ app.get('/api/youtube/download', async (req, res) => {
       res.setHeader('Accept-Ranges', 'bytes');
 
       const ytDlpProcess = spawn(YTDLP_BIN, [
+<<<<<<< HEAD
         ...getYouTubeCookieArgs(),
         '--extractor-args', 'youtube:player_client=android_music,android,ios,web',
+=======
+        ...ytDlpCommonArgs(),
+>>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
         '-f', formatFilter,
         '--buffer-size', '64K',
         '--audio-quality', '0',
@@ -682,6 +860,7 @@ app.get('/api/search/youtube', async (req, res) => {
       '--no-warnings',
       '--flat-playlist',
       '--no-check-certificates',
+      ...ytDlpCommonArgs(),
       '--',
       `ytsearch${limit}:${cleanQuery}`,
     ];

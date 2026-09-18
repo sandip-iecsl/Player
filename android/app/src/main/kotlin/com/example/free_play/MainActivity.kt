@@ -175,8 +175,9 @@ class MainActivity : AudioServiceActivity() {
                     val isAndroid14 = Build.VERSION.SDK_INT >= 34 // Android 14 (API 34)
                     val activeDeviceName = getActiveOutputDeviceName(audioManager)
                     val isUsb = isUsbAudioConnected(audioManager)
+                    val hasEligibleOutput = hasBitPerfectOutput(audioManager)
                     val resMap = HashMap<String, Any>()
-                    resMap["isSupported"] = isAndroid14
+                    resMap["isSupported"] = isAndroid14 && hasEligibleOutput
                     resMap["apiLevel"] = Build.VERSION.SDK_INT
                     resMap["isAndroid14OrHigher"] = isAndroid14
                     resMap["activeDevice"] = activeDeviceName
@@ -469,8 +470,18 @@ class MainActivity : AudioServiceActivity() {
         return false
     }
 
+    private fun hasBitPerfectOutput(audioManager: AudioManager?): Boolean {
+        if (audioManager == null || Build.VERSION.SDK_INT < 34) return false
+        return audioManager.getDevices(AudioManager.GET_DEVICES_OUTPUTS).any { device ->
+            device.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                device.type == AudioDeviceInfo.TYPE_USB_HEADSET ||
+                device.type == AudioDeviceInfo.TYPE_WIRED_HEADSET ||
+                device.type == AudioDeviceInfo.TYPE_WIRED_HEADPHONES
+        }
+    }
+
     private fun applyBitPerfectMode(audioManager: AudioManager?, sampleRate: Int, bitDepth: Int): Boolean {
-        if (audioManager == null) return false
+        if (audioManager == null || Build.VERSION.SDK_INT < 34 || !hasBitPerfectOutput(audioManager)) return false
 
         // Android 14+ (API 34) preferred mixer attributes API
         if (Build.VERSION.SDK_INT >= 34) {
@@ -496,7 +507,11 @@ class MainActivity : AudioServiceActivity() {
                 var applied = false
 
                 for (device in devices) {
-                    // Supported on USB DAC, Wired Headsets, and internal audio devices
+                    // Bluetooth and internal outputs are not bit-perfect eligible.
+                    if (device.type != AudioDeviceInfo.TYPE_USB_DEVICE &&
+                        device.type != AudioDeviceInfo.TYPE_USB_HEADSET &&
+                        device.type != AudioDeviceInfo.TYPE_WIRED_HEADSET &&
+                        device.type != AudioDeviceInfo.TYPE_WIRED_HEADPHONES) continue
                     try {
                         val mixerAttrs = AudioMixerAttributes.Builder(format)
                             .setMixerBehavior(AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT)
@@ -511,7 +526,7 @@ class MainActivity : AudioServiceActivity() {
                 return false
             }
         }
-        return true // On < API 34, Direct HAL pass-through is simulated
+        return false
     }
 
     private fun clearBitPerfectMode(audioManager: AudioManager?) {

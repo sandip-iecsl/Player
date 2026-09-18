@@ -47,6 +47,7 @@ class YouTubeAudioFormat {
 
   /// Helper to estimate file size in MB given bitrate in kbps and duration in seconds
   static String estimateSizeMb(double bitrateKbps, int durationSec) {
+    if (durationSec <= 0) return 'Unknown';
     final mb = ((bitrateKbps * 1000 * durationSec) / (8 * 1024 * 1024)).toStringAsFixed(1);
     return '$mb MB';
   }
@@ -62,7 +63,7 @@ class YouTubeAudioFormat {
         quality: 'High',
         bitrate: '320 kbps',
         format: 'm4a',
-        estimatedSizeMb: '$highMb MB',
+        estimatedSizeMb: highMb,
         streamUrl: streamUrl,
         formatId: '140',
       ),
@@ -70,7 +71,7 @@ class YouTubeAudioFormat {
         quality: 'Medium',
         bitrate: '128 kbps',
         format: 'm4a',
-        estimatedSizeMb: '$medMb MB',
+        estimatedSizeMb: medMb,
         streamUrl: streamUrl,
         formatId: '139',
       ),
@@ -78,7 +79,7 @@ class YouTubeAudioFormat {
         quality: 'Data Saver',
         bitrate: '64 kbps',
         format: 'm4a',
-        estimatedSizeMb: '$lowMb MB',
+        estimatedSizeMb: lowMb,
         streamUrl: streamUrl,
         formatId: '249',
       ),

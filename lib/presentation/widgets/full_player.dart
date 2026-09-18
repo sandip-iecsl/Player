@@ -1821,7 +1821,12 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                       children: [
                         _specRow('Sample Rate', liveSpecs.sampleRateDisplay, isHighlight: true),
                         const Divider(color: Colors.white10, height: 18),
-                        _specRow('Bit Depth', '${liveSpecs.bitDepth}-bit PCM Stereo'),
+                        _specRow(
+                          'Bit Depth',
+                          liveSpecs.bitDepth > 0
+                              ? '${liveSpecs.bitDepth}-bit PCM Stereo'
+                              : 'Source depth unknown',
+                        ),
                         const Divider(color: Colors.white10, height: 18),
                         _specRow('Audio Stream Codec', liveSpecs.codec),
                         const Divider(color: Colors.white10, height: 18),

@@ -351,12 +351,25 @@ $$\text{FinalScore} = (\text{TextRel} \times 0.42) + (\text{Pop} \times 0.14) + 
 ## 16. Backend Microservice Endpoints
 
 Located in `youtube-extractor-microservice/server.js`:
+<<<<<<< HEAD
 - `GET /health`: Service health, engine version, and non-sensitive `youtubeCookiesConfigured` status.
 - `GET /api/search/youtube?q=...&limit=20`: Server-side YouTube Data API v3 proxy with yt-dlp fallback.
 - `POST /api/youtube/extract`: Multi-format stream resolution.
 - `GET /api/youtube/download?url=...&quality=High`: Direct audio binary stream.
 
 All yt-dlp calls receive `--cookies <path>` when `cookies.txt` exists. At startup, the service decodes `YOUTUBE_COOKIES_BASE64` into `youtube-extractor-microservice/cookies.txt`; a local cookie file is also supported for development.
+=======
+- `GET /health`: Service health and engine version check.
+- `GET /api/search/youtube?q=...&limit=20`: Server-side YouTube Data API v3 proxy with best-effort yt-dlp fallback.
+- `POST /api/youtube/extract`: Multi-format stream resolution.
+- `GET /api/youtube/download?url=...&quality=High`: Direct audio binary stream.
+
+The deployed extractor may log `Sign in to confirm you're not a bot` when YouTube blocks
+yt-dlp. This is an upstream bot-verification failure, not a valid track-resolution result.
+The JioSaavn fallback remains a separate third-party integration and is not modified. Its
+responses are marked `source: 'jiosaavn-fallback'`; the Flutter YouTube import flow rejects
+that marker so a YouTube screen item cannot play a different JioSaavn recording.
+>>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
 
 ---
 
@@ -368,8 +381,14 @@ Template available in `.env.example`:
 - `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`: Spotify credentials.
 - `MONGODB_DATA_API_URL` / `MONGODB_API_KEY`: Atlas search endpoints.
 - `DEEZER_ENABLED`: `true` / `false`.
+<<<<<<< HEAD
 - `PORT`: HTTP port for the microservice; defaults to `3000`.
 - `YOUTUBE_COOKIES_BASE64`: Base64-encoded Netscape-format YouTube cookies for yt-dlp authentication.
+=======
+- `YOUTUBE_COOKIES_BASE64`: Optional base64-encoded Netscape-format YouTube cookies for
+   authenticated yt-dlp requests in cloud environments.
+- `YOUTUBE_COOKIES_FILE`: Optional path to a mounted Netscape-format cookie file.
+>>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
 
 ---
 
@@ -389,6 +408,18 @@ All automated tests run via `flutter test`:
 
 - **Total Network Disconnect**: Pipeline transparently returns matching downloaded songs from local Hive cache with zero error popups.
 - **Single Remote Provider Down**: Bounded timeout triggers graceful degradation; other 7 providers fulfill the search query.
+- **YouTube bot verification**: If yt-dlp is challenged by YouTube, the backend may try
+   best-effort Piped instances. If all YouTube paths fail, the request must fail rather than
+   silently substituting a different provider's recording.
+- **Authenticated yt-dlp recovery**: Set `YOUTUBE_COOKIES_BASE64` or
+   `YOUTUBE_COOKIES_FILE`. The service passes the secret cookie file and yt-dlp's
+   `ejs:github` remote component to extraction, download, and search calls. `/health` reports
+   only whether a cookie file was loaded.
+- **Stale YouTube metadata**: YouTube import metadata is stored under the versioned
+   `yt_imports_cache_v2` box/key namespace. This prevents old fabricated duration values from
+   surviving after extractor changes.
+- **Unknown duration or size**: The client does not invent 3-, 30-, or 40-minute durations.
+   Size remains `Unknown` until a trustworthy duration and bitrate are available.
 
 ---
 
@@ -425,8 +456,14 @@ All automated tests run via `flutter test`:
 1. **Render Dashboard**:
    - **WHERE**: https://dashboard.render.com/
    - **WHAT TO CLICK**: New Web Service → Connect `youtube-extractor-microservice`
+<<<<<<< HEAD
    - **ENVIRONMENT VARIABLES**: Set `PORT=3000`, `YOUTUBE_API_KEY=<key>`, and `YOUTUBE_COOKIES_BASE64=<base64-cookie-content>`.
    - **COOKIE PREPARATION**: Export YouTube cookies in Netscape `cookies.txt` format and run `base64 -w 0 cookies.txt` locally before saving the output as the Render secret.
+=======
+    - **ENVIRONMENT VARIABLES**: Set `PORT=3000`, `YOUTUBE_API_KEY=<key>`. If authenticated
+       yt-dlp cookies are legally and operationally permitted, provide them through secret
+       storage only; never commit browser cookies or credentials.
+>>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
    - **FREQUENCY**: Once
 
 ### D. PHYSICAL ANDROID DEVICE TEST PROCEDURE
@@ -434,7 +471,9 @@ All automated tests run via `flutter test`:
 2. Open app and perform search for `"arjit tum hi ho"` → Confirm *Tum Hi Ho* ranks #1.
 3. Search `"तुम ही हो"` (Devanagari) → Confirm Hindi transliteration match.
 4. Enable Airplane mode → Confirm offline storage search functions.
-5. Import YouTube link → Confirm multi-tier format modal renders (High/Medium/Low).
+5. Import YouTube link → Confirm multi-tier format modal renders (High/Medium/Low), the
+   requested video title and thumbnail remain paired with the playing audio, and duration/size
+   are not fabricated when the extractor cannot verify them.
 6. Tap hardware back button on search results → Confirms query is dismissed before switching tabs.
 7. Connect USB DAC or Bluetooth Hi-Fi headphones on Android 14+ device → Confirms Bit-Perfect badge displays live sample rate (e.g. 48.0 kHz / 24-bit).
 
