@@ -351,10 +351,12 @@ $$\text{FinalScore} = (\text{TextRel} \times 0.42) + (\text{Pop} \times 0.14) + 
 ## 16. Backend Microservice Endpoints
 
 Located in `youtube-extractor-microservice/server.js`:
-- `GET /health`: Service health and engine version check.
+- `GET /health`: Service health, engine version, and non-sensitive `youtubeCookiesConfigured` status.
 - `GET /api/search/youtube?q=...&limit=20`: Server-side YouTube Data API v3 proxy with yt-dlp fallback.
 - `POST /api/youtube/extract`: Multi-format stream resolution.
 - `GET /api/youtube/download?url=...&quality=High`: Direct audio binary stream.
+
+All yt-dlp calls receive `--cookies <path>` when `cookies.txt` exists. At startup, the service decodes `YOUTUBE_COOKIES_BASE64` into `youtube-extractor-microservice/cookies.txt`; a local cookie file is also supported for development.
 
 ---
 
@@ -366,6 +368,8 @@ Template available in `.env.example`:
 - `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`: Spotify credentials.
 - `MONGODB_DATA_API_URL` / `MONGODB_API_KEY`: Atlas search endpoints.
 - `DEEZER_ENABLED`: `true` / `false`.
+- `PORT`: HTTP port for the microservice; defaults to `3000`.
+- `YOUTUBE_COOKIES_BASE64`: Base64-encoded Netscape-format YouTube cookies for yt-dlp authentication.
 
 ---
 
@@ -391,6 +395,7 @@ All automated tests run via `flutter test`:
 ## 20. Security Model
 
 - **Zero Secret Commits**: All external API keys and database credentials reside strictly in `.env` files or backend environment variables.
+- **Cookie Protection**: `cookies.txt` is ignored by git, written with restrictive permissions when decoded, and never returned by the API. Store `YOUTUBE_COOKIES_BASE64` only in a secret environment-variable store.
 - **Chat Database Isolation**: Direct messaging data resides on `databaseId: 'chat'` with field encryption and zero shared access with search indexes.
 
 ---
@@ -420,7 +425,8 @@ All automated tests run via `flutter test`:
 1. **Render Dashboard**:
    - **WHERE**: https://dashboard.render.com/
    - **WHAT TO CLICK**: New Web Service → Connect `youtube-extractor-microservice`
-   - **ENVIRONMENT VARIABLES**: Set `PORT=3000`, `YOUTUBE_API_KEY=<key>`
+   - **ENVIRONMENT VARIABLES**: Set `PORT=3000`, `YOUTUBE_API_KEY=<key>`, and `YOUTUBE_COOKIES_BASE64=<base64-cookie-content>`.
+   - **COOKIE PREPARATION**: Export YouTube cookies in Netscape `cookies.txt` format and run `base64 -w 0 cookies.txt` locally before saving the output as the Render secret.
    - **FREQUENCY**: Once
 
 ### D. PHYSICAL ANDROID DEVICE TEST PROCEDURE

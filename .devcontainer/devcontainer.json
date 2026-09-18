@@ -1,11 +1,9 @@
 {
   "name": "Flutter & Node Dev Container",
   "image": "mcr.microsoft.com/devcontainers/universal:2",
-  "features": {
-    "ghcr.io/devcontainers-contrib/features/flutter:1": {},
-    "ghcr.io/devcontainers-contrib/features/android-sdk:1": {}
-  },
+  "onCreateCommand": "git clone https://github.com/flutter/flutter.git -b stable /tmp/flutter && sudo mv /tmp/flutter /usr/local/flutter && echo 'export PATH=\"$PATH:/usr/local/flutter/bin\"' >> ~/.bashrc",
   "containerEnv": {
+    "PATH": "${containerEnv:PATH}:/usr/local/flutter/bin",
     "ANDROID_HOME": "/home/codespace/android-sdk",
     "ANDROID_SDK_ROOT": "/home/codespace/android-sdk"
   },

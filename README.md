@@ -376,6 +376,7 @@ The backend microservice (`youtube-extractor-microservice/server.js`) runs an Ex
 - **Endpoint 1: `GET /api/search/youtube`**: Executes YouTube Data API v3 searches server-side, falling back to `yt-dlp --flat-playlist` and JioSaavn fallback.
 - **Endpoint 2: `POST /api/youtube/extract`**: Multi-format audio stream extraction (High 320kbps, Medium 128kbps, Low 64kbps).
 - **Endpoint 3: `GET /api/youtube/download`**: Streams audio binaries directly with intact audio container headers.
+- Every yt-dlp invocation uses `cookies.txt` when available. The file is generated from `YOUTUBE_COOKIES_BASE64` at startup or can be supplied locally for development.
 
 ---
 
@@ -384,6 +385,8 @@ The backend microservice (`youtube-extractor-microservice/server.js`) runs an Ex
 > **API Key Protection**: YouTube API keys must **NEVER** be committed into git or hardcoded into Flutter client source code.
 - Keys are loaded from `process.env.YOUTUBE_API_KEY` on the backend server only.
 - Client requests go through the backend `/api/search/youtube` proxy.
+- YouTube session cookies are loaded from `process.env.YOUTUBE_COOKIES_BASE64` and written to the ignored `youtube-extractor-microservice/cookies.txt` file at startup.
+- `/health` exposes `youtubeCookiesConfigured: true|false`; it never returns cookie data.
 
 ---
 
@@ -446,7 +449,15 @@ For Aura-owned catalog indexing on MongoDB Atlas M0 cluster:
 ---
 
 ## 21. Environment Variables
-Reference `.env.example` for all configurable keys. Never commit `.env` into git.
+Reference `.env.example` for all configurable keys. Never commit `.env`, `cookies.txt`, or exported browser cookies into git.
+
+The YouTube extractor accepts these backend variables:
+
+| Variable | Required | Description |
+|---|---:|---|
+| `PORT` | No | HTTP port; defaults to `3000`. |
+| `YOUTUBE_API_KEY` | No | Server-side YouTube Data API v3 key used for search. |
+| `YOUTUBE_COOKIES_BASE64` | No | Base64-encoded Netscape-format YouTube `cookies.txt` content for yt-dlp authentication. |
 
 ---
 
@@ -470,6 +481,16 @@ Reference `.env.example` for all configurable keys. Never commit `.env` into git
    ```bash
    npm start
    ```
+3. For local YouTube extraction, place an exported Netscape-format `cookies.txt` in this directory, or set `YOUTUBE_COOKIES_BASE64` before starting the service:
+  ```bash
+  export YOUTUBE_COOKIES_BASE64="$(base64 -w 0 cookies.txt)"
+  npm start
+  ```
+4. Verify the service and cookie status:
+  ```bash
+  curl http://localhost:3000/health
+  ```
+  The response should include `"youtubeCookiesConfigured":true` when cookies are available.
 
 ---
 
@@ -499,7 +520,7 @@ flutter test test/core/search
 ---
 
 ## 26. Deployment Guide
-- **Backend Microservice**: Deploy `youtube-extractor-microservice` to Render, Railway, or Docker container.
+- **Backend Microservice**: Deploy `youtube-extractor-microservice` to Render, Railway, or Docker container. Configure `YOUTUBE_COOKIES_BASE64` as a secret environment variable when YouTube requires an authenticated session.
 - **Firebase Functions**: Deploy via `firebase deploy --only functions`.
 - **Flutter Client**: Distribute generated release APK or upload App Bundle to Google Play Console.
 
@@ -509,6 +530,7 @@ flutter test test/core/search
 - **Search returns empty**: Verify network connection and backend microservice health (`GET /health`).
 - **Circuit Breaker tripped**: Check `ProviderHealthMonitor` diagnostics to inspect consecutive error reasons.
 - **YouTube download failed**: Ensure `yt-dlp` binary on the backend server is updated to the latest release.
+- **YouTube bot checks persist**: Confirm `/health` reports `youtubeCookiesConfigured:true`, verify the value is base64-encoded Netscape cookie content, and redeploy after updating the secret. Never paste raw cookie contents into logs or source control.
 
 ---
 
@@ -569,7 +591,8 @@ Certain actions cannot be performed autonomously by code and require manual web 
 1. **Render Dashboard**:
    - **WHERE**: https://dashboard.render.com/
    - **WHAT TO CLICK**: New Web Service → Connect repository (`youtube-extractor-microservice`)
-   - **ENVIRONMENT VARIABLES**: Set `PORT=3000`, `YOUTUBE_API_KEY=<key>`
+  - **ENVIRONMENT VARIABLES**: Set `PORT=3000`, `YOUTUBE_API_KEY=<key>`, and the secret `YOUTUBE_COOKIES_BASE64=<base64-cookie-content>`
+  - **COOKIE PREPARATION**: Export YouTube cookies in Netscape `cookies.txt` format, then encode them locally with `base64 -w 0 cookies.txt` before adding the result to Render.
    - **FREQUENCY**: Once
 
 ### D. PHYSICAL ANDROID DEVICE TEST CHECKLIST
