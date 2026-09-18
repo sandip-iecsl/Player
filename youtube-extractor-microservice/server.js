@@ -17,37 +17,6 @@ process.on('unhandledRejection', (reason) => {
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const YOUTUBE_COOKIES_PATH = path.join(__dirname, 'cookies.txt');
-
-function prepareYouTubeCookies() {
-  const encodedCookies = process.env.YOUTUBE_COOKIES_BASE64?.trim();
-  if (!encodedCookies) {
-    return fs.existsSync(YOUTUBE_COOKIES_PATH);
-  }
-
-  try {
-    const cookies = Buffer.from(encodedCookies, 'base64').toString('utf8');
-    if (!cookies.trim()) {
-      throw new Error('decoded cookie content is empty');
-    }
-
-    fs.writeFileSync(YOUTUBE_COOKIES_PATH, cookies, { encoding: 'utf8', mode: 0o600 });
-    console.log('[Microservice] YouTube cookies decoded successfully');
-    return true;
-  } catch (error) {
-    console.error(`[Microservice] Failed to decode YouTube cookies: ${error.message}`);
-    return false;
-  }
-}
-
-const hasYouTubeCookies = prepareYouTubeCookies();
-
-function getYouTubeCookieArgs() {
-  return ytCookiesPath && fs.existsSync(ytCookiesPath)
-    ? ['--cookies', ytCookiesPath]
-    : [];
-}
-
 app.use(cors());
 app.use(express.json());
 
@@ -266,7 +235,6 @@ app.post('/api/youtube/extract', async (req, res) => {
 
     // yt-dlp dump-single-json to parse full format list without re-encoding
     const ytDlpArgs = [
-      ...getYouTubeCookieArgs(),
       '--dump-single-json',
       '--no-warnings',
       '--no-playlist',
@@ -859,7 +827,6 @@ app.get('/api/search/youtube', async (req, res) => {
 
     // Strategy 2: yt-dlp ytsearch dump fallback
     const ytDlpArgs = [
-      ...getYouTubeCookieArgs(),
       '--dump-single-json',
       '--no-warnings',
       '--flat-playlist',

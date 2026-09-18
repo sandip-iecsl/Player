@@ -1633,140 +1633,162 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         builder: (context) {
-          return Container(
-            decoration: BoxDecoration(
-              color: AppColors.deepSpaceBlackLight,
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(24)),
-              boxShadow: [
-                BoxShadow(
-                  color: AppColors.neonPink.withValues(alpha: 0.15),
-                  blurRadius: 30,
-                  spreadRadius: 2,
-                  offset: const Offset(0, -5),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-              child: StatefulBuilder(builder: (context, setStateLocal) {
-                return Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Title
-                    Text(
-                      'Audio Settings',
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Volume / Audio Boost Control
-                    StreamBuilder<double>(
-                      stream: audioService.volumeStream,
-                      initialData: audioService.volumeMultiplier,
-                      builder: (context, snapshot) {
-                        final volume = snapshot.data ?? 1.0;
-                        return Row(
-                          children: [
-                            Icon(
-                              volume == 0 ? Icons.volume_mute : Icons.volume_up,
-                              color: AppColors.textPrimary,
-                              size: 24,
-                            ),
-                            const SizedBox(width: 16),
-                            Expanded(
-                              child: SliderTheme(
-                                data: SliderThemeData(
-                                  trackHeight: 4,
-                                  thumbShape: const RoundSliderThumbShape(
-                                      enabledThumbRadius: 8),
-                                  overlayShape: const RoundSliderOverlayShape(
-                                      overlayRadius: 16),
-                                  activeTrackColor: AppColors.neonPink,
-                                  inactiveTrackColor:
-                                      AppColors.divider.withOpacity(0.3),
-                                  thumbColor: AppColors.neonPink,
-                                  overlayColor:
-                                      AppColors.neonPink.withOpacity(0.2),
-                                ),
-                                child: Slider(
-                                  value: volume,
-                                  min: 0.0,
-                                  max: audioService.maxVolumeLimit,
-                                  onChanged: (val) {
-                                    audioService.setVolume(val);
-                                    setStateLocal(() {});
-                                  },
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${(volume * 100).toInt()}%',
-                              style: TextStyle(
-                                color: AppColors.textPrimary,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                              ),
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 24),
-
-                    // Advanced Audio Settings
-                    // Advanced Audio Settings & Bluetooth Profiles
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // Quick 1-Tap Sound Profiles (Bluetooth / Headphones / Dynamic)
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('AUDIO PROFILES',
-                                style: TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1.2)),
-                            Text('BLUETOOTH READY',
-                                style: TextStyle(
-                                    color: AppColors.neonCyan,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.bold)),
-                          ],
+          return SafeArea(
+            top: false,
+            child: Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.86,
+              ),
+              decoration: BoxDecoration(
+                color: AppColors.deepSpaceBlackLight,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.neonPink.withValues(alpha: 0.15),
+                    blurRadius: 30,
+                    spreadRadius: 2,
+                    offset: const Offset(0, -5),
+                  ),
+                ],
+              ),
+              child: SingleChildScrollView(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                child: StatefulBuilder(builder: (context, setStateLocal) {
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Title
+                      Text(
+                        'Audio Settings',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                         ),
-                        const SizedBox(height: 8),
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: Row(
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Volume / Audio Boost Control
+                      StreamBuilder<double>(
+                        stream: audioService.volumeStream,
+                        initialData: audioService.volumeMultiplier,
+                        builder: (context, snapshot) {
+                          final volume = snapshot.data ?? 1.0;
+                          return Row(
                             children: [
-                              for (final profile in [
-                                ('🔊 BT Speaker Beast', 0.90, 0.75),
-                                ('🎧 Club V-Shape', 0.80, 0.60),
-                                ('🚀 Max Bass & Air', 1.0, 0.90),
-                                ('🎵 Balanced Hi-Fi', 0.45, 0.40),
-                                ('🎙️ Vocal Clarity', 0.25, 0.70),
-                              ])
-                                Padding(
-                                  padding: const EdgeInsets.only(right: 8),
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      audioService.setAudioProfile(
-                                          profile.$2, profile.$3);
+                              Icon(
+                                volume == 0
+                                    ? Icons.volume_mute
+                                    : Icons.volume_up,
+                                color: AppColors.textPrimary,
+                                size: 24,
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: SliderTheme(
+                                  data: SliderThemeData(
+                                    trackHeight: 4,
+                                    thumbShape: const RoundSliderThumbShape(
+                                        enabledThumbRadius: 8),
+                                    overlayShape: const RoundSliderOverlayShape(
+                                        overlayRadius: 16),
+                                    activeTrackColor: AppColors.neonPink,
+                                    inactiveTrackColor:
+                                        AppColors.divider.withOpacity(0.3),
+                                    thumbColor: AppColors.neonPink,
+                                    overlayColor:
+                                        AppColors.neonPink.withOpacity(0.2),
+                                  ),
+                                  child: Slider(
+                                    value: volume,
+                                    min: 0.0,
+                                    max: audioService.maxVolumeLimit,
+                                    onChanged: (val) {
+                                      audioService.setVolume(val);
                                       setStateLocal(() {});
                                     },
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 6),
-                                      decoration: BoxDecoration(
-                                        color:
-                                            (audioService.bassGain - profile.$2)
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                '${(volume * 100).toInt()}%',
+                                style: TextStyle(
+                                  color: AppColors.textPrimary,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 24),
+
+                      // Advanced Audio Settings
+                      // Advanced Audio Settings & Bluetooth Profiles
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Quick 1-Tap Sound Profiles (Bluetooth / Headphones / Dynamic)
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('AUDIO PROFILES',
+                                  style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.2)),
+                              Text('BLUETOOTH READY',
+                                  style: TextStyle(
+                                      color: AppColors.neonCyan,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                for (final profile in [
+                                  ('🔊 BT Speaker Beast', 0.90, 0.75),
+                                  ('🎧 Club V-Shape', 0.80, 0.60),
+                                  ('🚀 Max Bass & Air', 1.0, 0.90),
+                                  ('🎵 Balanced Hi-Fi', 0.45, 0.40),
+                                  ('🎙️ Vocal Clarity', 0.25, 0.70),
+                                ])
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: GestureDetector(
+                                      onTap: () {
+                                        audioService.setAudioProfile(
+                                            profile.$2, profile.$3);
+                                        setStateLocal(() {});
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 12, vertical: 6),
+                                        decoration: BoxDecoration(
+                                          color: (audioService.bassGain -
+                                                              profile.$2)
+                                                          .abs() <
+                                                      0.05 &&
+                                                  (audioService.trebleGain -
+                                                              profile.$3)
+                                                          .abs() <
+                                                      0.05
+                                              ? AppColors.neonPink
+                                                  .withValues(alpha: 0.25)
+                                              : AppColors.deepSpaceBlackLight,
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                          border: Border.all(
+                                            color: (audioService.bassGain -
+                                                                profile.$2)
                                                             .abs() <
                                                         0.05 &&
                                                     (audioService.trebleGain -
@@ -1774,328 +1796,321 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                                                             .abs() <
                                                         0.05
                                                 ? AppColors.neonPink
-                                                    .withValues(alpha: 0.25)
-                                                : AppColors.deepSpaceBlackLight,
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                          color: (audioService.bassGain -
-                                                              profile.$2)
-                                                          .abs() <
-                                                      0.05 &&
-                                                  (audioService.trebleGain -
-                                                              profile.$3)
-                                                          .abs() <
-                                                      0.05
-                                              ? AppColors.neonPink
-                                              : AppColors.divider
-                                                  .withValues(alpha: 0.6),
-                                          width: 1,
+                                                : AppColors.divider
+                                                    .withValues(alpha: 0.6),
+                                            width: 1,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          profile.$1,
+                                          style: TextStyle(
+                                            color: (audioService.bassGain -
+                                                                profile.$2)
+                                                            .abs() <
+                                                        0.05 &&
+                                                    (audioService.trebleGain -
+                                                                profile.$3)
+                                                            .abs() <
+                                                        0.05
+                                                ? AppColors.neonPink
+                                                : AppColors.textPrimary,
+                                            fontSize: 11,
+                                            fontWeight: (audioService.bassGain -
+                                                                profile.$2)
+                                                            .abs() <
+                                                        0.05 &&
+                                                    (audioService.trebleGain -
+                                                                profile.$3)
+                                                            .abs() <
+                                                        0.05
+                                                ? FontWeight.bold
+                                                : FontWeight.w500,
+                                          ),
                                         ),
                                       ),
-                                      child: Text(
-                                        profile.$1,
-                                        style: TextStyle(
-                                          color: (audioService.bassGain -
-                                                              profile.$2)
-                                                          .abs() <
-                                                      0.05 &&
-                                                  (audioService.trebleGain -
-                                                              profile.$3)
-                                                          .abs() <
-                                                      0.05
-                                              ? AppColors.neonPink
-                                              : AppColors.textPrimary,
-                                          fontSize: 11,
-                                          fontWeight: (audioService.bassGain -
-                                                              profile.$2)
-                                                          .abs() <
-                                                      0.05 &&
-                                                  (audioService.trebleGain -
-                                                              profile.$3)
-                                                          .abs() <
-                                                      0.05
-                                              ? FontWeight.bold
-                                              : FontWeight.w500,
-                                        ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+
+                          // Bass Slider & Presets
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('BASS BOOST',
+                                  style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.2)),
+                              Text('${(audioService.bassGain * 100).toInt()}%',
+                                  style: TextStyle(
+                                      color: AppColors.neonPink,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              for (final preset in [
+                                ('Flat', 0.0),
+                                ('Warm', 0.40),
+                                ('Deep', 0.70),
+                                ('Ultra', 1.0),
+                              ])
+                                GestureDetector(
+                                  onTap: () {
+                                    audioService.setBassGain(preset.$2);
+                                    setStateLocal(() {});
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: (audioService.bassGain - preset.$2)
+                                                  .abs() <
+                                              0.05
+                                          ? AppColors.neonPink
+                                              .withValues(alpha: 0.25)
+                                          : AppColors.deepSpaceBlackLight,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color:
+                                            (audioService.bassGain - preset.$2)
+                                                        .abs() <
+                                                    0.05
+                                                ? AppColors.neonPink
+                                                : AppColors.divider,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      preset.$1,
+                                      style: TextStyle(
+                                        color:
+                                            (audioService.bassGain - preset.$2)
+                                                        .abs() <
+                                                    0.05
+                                                ? AppColors.neonPink
+                                                : AppColors.textSecondary,
+                                        fontSize: 11,
+                                        fontWeight:
+                                            (audioService.bassGain - preset.$2)
+                                                        .abs() <
+                                                    0.05
+                                                ? FontWeight.bold
+                                                : FontWeight.normal,
                                       ),
                                     ),
                                   ),
                                 ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 18),
-
-                        // Bass Slider & Presets
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('BASS BOOST',
-                                style: TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1.2)),
-                            Text('${(audioService.bassGain * 100).toInt()}%',
-                                style: TextStyle(
-                                    color: AppColors.neonPink,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            for (final preset in [
-                              ('Flat', 0.0),
-                              ('Warm', 0.40),
-                              ('Deep', 0.70),
-                              ('Ultra', 1.0),
-                            ])
-                              GestureDetector(
-                                onTap: () {
-                                  audioService.setBassGain(preset.$2);
-                                  setStateLocal(() {});
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: (audioService.bassGain - preset.$2)
-                                                .abs() <
-                                            0.05
-                                        ? AppColors.neonPink
-                                            .withValues(alpha: 0.25)
-                                        : AppColors.deepSpaceBlackLight,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: (audioService.bassGain - preset.$2)
-                                                  .abs() <
-                                              0.05
-                                          ? AppColors.neonPink
-                                          : AppColors.divider,
-                                      width: 1,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    preset.$1,
-                                    style: TextStyle(
-                                      color: (audioService.bassGain - preset.$2)
-                                                  .abs() <
-                                              0.05
-                                          ? AppColors.neonPink
-                                          : AppColors.textSecondary,
-                                      fontSize: 11,
-                                      fontWeight:
-                                          (audioService.bassGain - preset.$2)
-                                                      .abs() <
-                                                  0.05
-                                              ? FontWeight.bold
-                                              : FontWeight.normal,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        SliderTheme(
-                          data: SliderThemeData(
-                            trackHeight: 3,
-                            thumbShape: const RoundSliderThumbShape(
-                                enabledThumbRadius: 7),
-                            overlayShape: const RoundSliderOverlayShape(
-                                overlayRadius: 14),
-                            activeTrackColor: audioService.bassGain > 0
-                                ? AppColors.neonPink
-                                : AppColors.divider,
-                            inactiveTrackColor: AppColors.divider,
-                            thumbColor: audioService.bassGain > 0
-                                ? AppColors.neonPink
-                                : AppColors.textSecondary,
-                          ),
-                          child: Slider(
-                            value: audioService.bassGain,
-                            onChanged: (val) {
-                              audioService.setBassGain(val);
-                              setStateLocal(() {});
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Treble Slider & Presets
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('TREBLE CLARITY',
-                                style: TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1.2)),
-                            Text('${(audioService.trebleGain * 100).toInt()}%',
-                                style: TextStyle(
-                                    color: AppColors.neonCyan,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold)),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            for (final preset in [
-                              ('Flat', 0.0),
-                              ('Smooth', 0.35),
-                              ('Crisp', 0.70),
-                              ('Air Max', 1.0),
-                            ])
-                              GestureDetector(
-                                onTap: () {
-                                  audioService.setTrebleGain(preset.$2);
-                                  setStateLocal(() {});
-                                },
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 12, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: (audioService.trebleGain - preset.$2)
-                                                .abs() <
-                                            0.05
-                                        ? AppColors.neonCyan
-                                            .withValues(alpha: 0.25)
-                                        : AppColors.deepSpaceBlackLight,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color:
-                                          (audioService.trebleGain - preset.$2)
-                                                      .abs() <
-                                                  0.05
-                                              ? AppColors.neonCyan
-                                              : AppColors.divider,
-                                      width: 1,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    preset.$1,
-                                    style: TextStyle(
-                                      color:
-                                          (audioService.trebleGain - preset.$2)
-                                                      .abs() <
-                                                  0.05
-                                              ? AppColors.neonCyan
-                                              : AppColors.textSecondary,
-                                      fontSize: 11,
-                                      fontWeight:
-                                          (audioService.trebleGain - preset.$2)
-                                                      .abs() <
-                                                  0.05
-                                              ? FontWeight.bold
-                                              : FontWeight.normal,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        SliderTheme(
-                          data: SliderThemeData(
-                            trackHeight: 3,
-                            thumbShape: const RoundSliderThumbShape(
-                                enabledThumbRadius: 7),
-                            overlayShape: const RoundSliderOverlayShape(
-                                overlayRadius: 14),
-                            activeTrackColor: audioService.trebleGain > 0
-                                ? AppColors.neonCyan
-                                : AppColors.divider,
-                            inactiveTrackColor: AppColors.divider,
-                            thumbColor: audioService.trebleGain > 0
-                                ? AppColors.neonCyan
-                                : AppColors.textSecondary,
-                          ),
-                          child: Slider(
-                            value: audioService.trebleGain,
-                            onChanged: (val) {
-                              audioService.setTrebleGain(val);
-                              setStateLocal(() {});
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-
-                        // Max Volume Selector
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('MAX VOLUME OVERRIDE',
-                                style: TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1.2)),
-                            Container(
-                              height: 36,
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 16),
-                              decoration: BoxDecoration(
-                                  color: AppColors.deepSpaceBlack,
-                                  borderRadius: BorderRadius.circular(20),
-                                  border: Border.all(
-                                      color: AppColors.neonPink
-                                          .withValues(alpha: 0.5),
-                                      width: 1),
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: AppColors.neonPink
-                                          .withValues(alpha: 0.1),
-                                      blurRadius: 10,
-                                      spreadRadius: 1,
-                                    )
-                                  ]),
-                              child: DropdownButtonHideUnderline(
-                                child: DropdownButton<double>(
-                                  value: audioService.maxVolumeLimit,
-                                  dropdownColor: AppColors.deepSpaceBlackLight,
-                                  icon: Padding(
-                                    padding: const EdgeInsets.only(left: 8.0),
-                                    child: Icon(Icons.flash_on,
-                                        color: AppColors.neonPink, size: 16),
-                                  ),
-                                  style: TextStyle(
-                                    color: AppColors.textPrimary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    letterSpacing: 0.5,
-                                  ),
-                                  items: const [
-                                    DropdownMenuItem(
-                                        value: 2.0, child: Text('MAX 200%')),
-                                    DropdownMenuItem(
-                                        value: 3.0, child: Text('MAX 300%')),
-                                    DropdownMenuItem(
-                                        value: 4.0, child: Text('MAX 400%')),
-                                  ],
-                                  onChanged: (val) {
-                                    if (val != null) {
-                                      audioService.setMaxVolumeLimit(val);
-                                      setStateLocal(() {});
-                                      setState(() {});
-                                    }
-                                  },
-                                ),
-                              ),
+                          const SizedBox(height: 6),
+                          SliderTheme(
+                            data: SliderThemeData(
+                              trackHeight: 3,
+                              thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 7),
+                              overlayShape: const RoundSliderOverlayShape(
+                                  overlayRadius: 14),
+                              activeTrackColor: audioService.bassGain > 0
+                                  ? AppColors.neonPink
+                                  : AppColors.divider,
+                              inactiveTrackColor: AppColors.divider,
+                              thumbColor: audioService.bassGain > 0
+                                  ? AppColors.neonPink
+                                  : AppColors.textSecondary,
                             ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                );
-              }),
+                            child: Slider(
+                              value: audioService.bassGain,
+                              onChanged: (val) {
+                                audioService.setBassGain(val);
+                                setStateLocal(() {});
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Treble Slider & Presets
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('TREBLE CLARITY',
+                                  style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.2)),
+                              Text(
+                                  '${(audioService.trebleGain * 100).toInt()}%',
+                                  style: TextStyle(
+                                      color: AppColors.neonCyan,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              for (final preset in [
+                                ('Flat', 0.0),
+                                ('Smooth', 0.35),
+                                ('Crisp', 0.70),
+                                ('Air Max', 1.0),
+                              ])
+                                GestureDetector(
+                                  onTap: () {
+                                    audioService.setTrebleGain(preset.$2);
+                                    setStateLocal(() {});
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color:
+                                          (audioService.trebleGain - preset.$2)
+                                                      .abs() <
+                                                  0.05
+                                              ? AppColors.neonCyan
+                                                  .withValues(alpha: 0.25)
+                                              : AppColors.deepSpaceBlackLight,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: (audioService.trebleGain -
+                                                        preset.$2)
+                                                    .abs() <
+                                                0.05
+                                            ? AppColors.neonCyan
+                                            : AppColors.divider,
+                                        width: 1,
+                                      ),
+                                    ),
+                                    child: Text(
+                                      preset.$1,
+                                      style: TextStyle(
+                                        color: (audioService.trebleGain -
+                                                        preset.$2)
+                                                    .abs() <
+                                                0.05
+                                            ? AppColors.neonCyan
+                                            : AppColors.textSecondary,
+                                        fontSize: 11,
+                                        fontWeight: (audioService.trebleGain -
+                                                        preset.$2)
+                                                    .abs() <
+                                                0.05
+                                            ? FontWeight.bold
+                                            : FontWeight.normal,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          SliderTheme(
+                            data: SliderThemeData(
+                              trackHeight: 3,
+                              thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 7),
+                              overlayShape: const RoundSliderOverlayShape(
+                                  overlayRadius: 14),
+                              activeTrackColor: audioService.trebleGain > 0
+                                  ? AppColors.neonCyan
+                                  : AppColors.divider,
+                              inactiveTrackColor: AppColors.divider,
+                              thumbColor: audioService.trebleGain > 0
+                                  ? AppColors.neonCyan
+                                  : AppColors.textSecondary,
+                            ),
+                            child: Slider(
+                              value: audioService.trebleGain,
+                              onChanged: (val) {
+                                audioService.setTrebleGain(val);
+                                setStateLocal(() {});
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+
+                          // Max Volume Selector
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('MAX VOLUME OVERRIDE',
+                                  style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      letterSpacing: 1.2)),
+                              Container(
+                                height: 36,
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 16),
+                                decoration: BoxDecoration(
+                                    color: AppColors.deepSpaceBlack,
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(
+                                        color: AppColors.neonPink
+                                            .withValues(alpha: 0.5),
+                                        width: 1),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: AppColors.neonPink
+                                            .withValues(alpha: 0.1),
+                                        blurRadius: 10,
+                                        spreadRadius: 1,
+                                      )
+                                    ]),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<double>(
+                                    value: audioService.maxVolumeLimit,
+                                    dropdownColor:
+                                        AppColors.deepSpaceBlackLight,
+                                    icon: Padding(
+                                      padding: const EdgeInsets.only(left: 8.0),
+                                      child: Icon(Icons.flash_on,
+                                          color: AppColors.neonPink, size: 16),
+                                    ),
+                                    style: TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(
+                                          value: 2.0, child: Text('MAX 200%')),
+                                      DropdownMenuItem(
+                                          value: 3.0, child: Text('MAX 300%')),
+                                      DropdownMenuItem(
+                                          value: 4.0, child: Text('MAX 400%')),
+                                    ],
+                                    onChanged: (val) {
+                                      if (val != null) {
+                                        audioService.setMaxVolumeLimit(val);
+                                        setStateLocal(() {});
+                                        setState(() {});
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+                    ],
+                  );
+                }),
+              ),
             ),
           );
         });
