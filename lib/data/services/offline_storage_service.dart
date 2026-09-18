@@ -85,15 +85,24 @@ class OfflineStorageService {
         ? selectedFormat.streamUrl.toString()
         : song.previewUrl;
 
-    // Dynamically refresh or extract stream URL if missing or unstreamable
-    if ((audioUrl == null || audioUrl.isEmpty || audioUrl.startsWith('unstreamable')) && song.id.isNotEmpty) {
+    // If audioUrl is a YouTube webpage URL (not a direct binary/audio CDN stream), clear it
+    if (audioUrl != null && (YouTubeExtractorService.isYouTubeUrl(audioUrl) || audioUrl.contains('youtube.com/watch') || audioUrl.contains('youtu.be/'))) {
+      audioUrl = null;
+    }
+
+    // Dynamically refresh or extract direct stream URL if missing, expired, or unstreamable
+    if ((audioUrl == null || audioUrl.isEmpty || audioUrl.startsWith('unstreamable')) && (song.id.isNotEmpty || song.youtubeUrl != null)) {
       if (isYoutube) {
-        debugPrint('[Offline] 🎬 Resolving fresh YouTube stream URL for "${song.title}"...');
-        audioUrl = await YouTubeExtractorService().getFreshStreamUrl(song);
+        debugPrint('[Offline] 🎬 Resolving fresh YouTube direct audio stream URL for "${song.title}"...');
+        try {
+          audioUrl = await YouTubeExtractorService().getFreshStreamUrl(song);
+        } catch (e) {
+          debugPrint('[Offline] ⚠️ Failed to resolve fresh direct YouTube stream: $e');
+        }
       }
     }
 
-    // Secondary fallback for YouTube: Use Microservice Download Endpoint
+    // Microservice proxy download endpoint URL
     final downloadEndpointUrl = isYoutube
         ? YouTubeExtractorService().getDownloadUrl(
             song,
@@ -101,10 +110,13 @@ class OfflineStorageService {
             quality: targetQuality,
           )
         : null;
-    final primaryDownloadUrl = audioUrl ?? downloadEndpointUrl;
+
+    final primaryDownloadUrl = (audioUrl != null && audioUrl.isNotEmpty && !YouTubeExtractorService.isYouTubeUrl(audioUrl))
+        ? audioUrl
+        : downloadEndpointUrl;
 
     if (primaryDownloadUrl == null || primaryDownloadUrl.isEmpty) {
-      throw Exception('No audio URL available for download.');
+      throw Exception('No audio stream URL available for download.');
     }
 
     try {
@@ -135,6 +147,13 @@ class OfflineStorageService {
           primaryDownloadUrl,
           audioPath,
           deleteOnError: true,
+          options: Options(
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': '*/*',
+              'Range': 'bytes=0-',
+            },
+          ),
           onReceiveProgress: (count, total) {
             if (total != -1 && total > 0) {
               onProgress(count / total);
@@ -143,7 +162,7 @@ class OfflineStorageService {
         );
       } catch (directDownloadErr) {
         if (isYoutube && downloadEndpointUrl != null && primaryDownloadUrl != downloadEndpointUrl) {
-          debugPrint('[Offline] ⚠️ Direct download failed ($directDownloadErr). Trying microservice proxy: $downloadEndpointUrl');
+          debugPrint('[Offline] ⚠️ Direct stream download failed ($directDownloadErr). Trying microservice proxy: $downloadEndpointUrl');
           await _dio.download(
             downloadEndpointUrl,
             audioPath,

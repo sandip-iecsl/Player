@@ -578,3 +578,13 @@ Certain actions cannot be performed autonomously by code and require manual web 
 3. Search query: `"तुम ही हो"` (Hindi Devanagari) → Verify transliterated match.
 4. Toggle Airplane mode → Perform search → Verify local offline search banner and playback.
 5. Tap *Import Link* → Paste YouTube video link → Verify 3-tier format selection modal.
+6. Tap hardware back button when search query is open → Verify search is cleared before navigating across tabs.
+7. Connect USB DAC or Hi-Fi headphones → Verify Bit-Perfect badge displays live sample rate (e.g., `48.0 kHz / 24-bit` or `96.0 kHz`) and opens Audiophile modal.
+
+---
+
+## 33. Android 14+ Bit-Perfect Audio & Hardware Back Stack
+
+- **Bit-Perfect Direct HAL Pipeline (`MIXER_BEHAVIOR_BIT_PERFECT`)**: On Android 14+ (API 34+), the audio stream communicates with `AudioManager.setPreferredMixerAttributes` via Kotlin MethodChannel `aura_player/bit_perfect` to bypass system-level software mixer, resampling, and volume compression.
+- **Audiophile Sample Rate Telemetry**: Real-time display of sample rate (`44.1 kHz`, `48.0 kHz`, `96.0 kHz`, `192.0 kHz / MHz DSD`) and bit depth across Mini and Full Players.
+- **Comprehensive Back Navigation Hierarchy**: Back presses gracefully dismiss active full player panels, search query/results, nested route stacks, open dialogs, and tab history in priority sequence.

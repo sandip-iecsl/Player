@@ -24,6 +24,7 @@ import '../../core/constants/app_colors.dart';
 import 'synchronized_lyrics_widget.dart';
 import 'package:flutter/services.dart';
 import '../providers/theme_provider.dart';
+import '../../data/services/bit_perfect_service.dart';
 
 class FullPlayer extends ConsumerStatefulWidget {
   final Song currentSong;
@@ -120,6 +121,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
     final liveDuration = ref.watch(currentDurationProvider).value;
     final audioService = ref.watch(audioServiceProvider);
     final playbackStateStream = ref.watch(audioServiceProvider).playbackState;
+    final specs = ref.watch(audioSpecsProvider).valueOrNull ?? BitPerfectService().currentSpecs;
 
     final actualMaxDuration = liveDuration?.inSeconds.toDouble() ??
         widget.currentSong.duration.inSeconds.toDouble();
@@ -531,7 +533,78 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                         ),
                       ),
 
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 12),
+
+                      // Audiophile & Bit-Perfect Quality Badge
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            GestureDetector(
+                              onTap: () => _showBitPerfectModal(context, ref, specs),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: specs.isBitPerfectActive
+                                      ? Colors.amber.withOpacity(0.15)
+                                      : AppColors.neonPink.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: specs.isBitPerfectActive
+                                        ? Colors.amber.withOpacity(0.6)
+                                        : AppColors.neonPink.withOpacity(0.4),
+                                    width: 1,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      specs.isBitPerfectActive
+                                          ? Icons.auto_awesome_rounded
+                                          : Icons.graphic_eq_rounded,
+                                      size: 13,
+                                      color: specs.isBitPerfectActive ? Colors.amber : AppColors.neonPink,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      specs.qualityBadgeText,
+                                      style: TextStyle(
+                                        color: specs.isBitPerfectActive ? Colors.amber : AppColors.neonPink,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                                    if (specs.isBitPerfectActive) ...[
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '• BIT-PERFECT',
+                                        style: TextStyle(
+                                          color: Colors.amber.shade200,
+                                          fontSize: 9.5,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              ),
+                            ),
+                            Text(
+                              specs.codec,
+                              style: TextStyle(
+                                color: AppColors.textSecondary.withOpacity(0.8),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
 
                       // Progress Bar
                       Padding(
@@ -1634,6 +1707,178 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
           ),
         );
       }
+    );
+  }
+
+  void _showBitPerfectModal(BuildContext context, WidgetRef ref, AudioHardwareSpecs specs) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            final liveSpecs = ref.watch(audioSpecsProvider).valueOrNull ?? BitPerfectService().currentSpecs;
+            return Container(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+              decoration: BoxDecoration(
+                color: AppColors.deepSpaceBlackLight,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+                border: Border.all(color: Colors.white.withOpacity(0.12), width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.6),
+                    blurRadius: 30,
+                    offset: const Offset(0, -10),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 44,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.25),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: liveSpecs.isBitPerfectActive
+                              ? Colors.amber.withOpacity(0.2)
+                              : AppColors.neonPink.withOpacity(0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          liveSpecs.isBitPerfectActive
+                              ? Icons.auto_awesome_rounded
+                              : Icons.graphic_eq_rounded,
+                          color: liveSpecs.isBitPerfectActive ? Colors.amber : AppColors.neonPink,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Bit-Perfect Audio Routing',
+                              style: TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Android 14+ HAL Direct DAC Engine',
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Switch.adaptive(
+                        value: liveSpecs.isBitPerfectActive,
+                        activeColor: Colors.amber,
+                        activeTrackColor: Colors.amber.withOpacity(0.4),
+                        onChanged: (val) async {
+                          await BitPerfectService().configureForSong(
+                            widget.currentSong,
+                            userExplicitEnable: val,
+                          );
+                          setModalState(() {});
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.deepSpaceBlack,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: liveSpecs.isBitPerfectActive
+                            ? Colors.amber.withOpacity(0.4)
+                            : Colors.white.withOpacity(0.08),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        _specRow('Sample Rate', liveSpecs.sampleRateDisplay, isHighlight: true),
+                        const Divider(color: Colors.white10, height: 18),
+                        _specRow('Bit Depth', '${liveSpecs.bitDepth}-bit PCM Stereo'),
+                        const Divider(color: Colors.white10, height: 18),
+                        _specRow('Audio Stream Codec', liveSpecs.codec),
+                        const Divider(color: Colors.white10, height: 18),
+                        _specRow('Active Output Device', liveSpecs.activeDevice),
+                        const Divider(color: Colors.white10, height: 18),
+                        _specRow(
+                          'Bypass Software Mixer (SRC)',
+                          liveSpecs.isBitPerfectActive ? 'Bypassed (HAL Direct)' : 'Standard Android Mixer',
+                          isPositive: liveSpecs.isBitPerfectActive,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Bit-Perfect mode routes raw PCM streams directly to the Hardware Abstraction Layer (HAL), completely eliminating Android OS resamplers, volume scaling, and software DSP for audiophile-grade fidelity.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary.withOpacity(0.85),
+                      fontSize: 11.5,
+                      height: 1.45,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _specRow(String label, String value, {bool isHighlight = false, bool? isPositive}) {
+    Color valueColor = AppColors.textPrimary;
+    if (isHighlight) valueColor = Colors.amber;
+    if (isPositive == true) valueColor = Colors.greenAccent;
+    if (isPositive == false) valueColor = AppColors.textSecondary;
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: valueColor,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
     );
   }
 }

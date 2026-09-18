@@ -163,8 +163,7 @@ app.post('/api/youtube/extract', async (req, res) => {
       '--no-playlist',
       '--no-check-certificates',
       '-f', 'bestaudio/140/251/139/best',
-      '-q', '0',
-      '--extractor-args', 'youtube:player_client=android,ios,web',
+      '--extractor-args', 'youtube:player_client=android_music,android,ios,web',
       '--',
       targetUrl
     ];
@@ -241,9 +240,59 @@ app.post('/api/youtube/extract', async (req, res) => {
         }
       }
 
-      console.warn(`[Extractor] ⚠️ yt-dlp failed or timed out (${error?.message || stderr}). Trying JioSaavn fallback...`);
+      console.warn(`[Extractor] ⚠️ yt-dlp failed or timed out (${error?.message || stderr}). Trying Piped streaming fallback...`);
 
-      // Strategy 2: YouTube oEmbed + JioSaavn Instant Fallback Matcher
+      // Strategy 2: Piped API Multi-Instance Fallback
+      const pipedInstances = [
+        'https://pipedapi.kavin.rocks',
+        'https://api.piped.private.coffee',
+        'https://pipedapi.leptons.xyz'
+      ];
+
+      for (const instance of pipedInstances) {
+        try {
+          const pipedRes = await axios.get(`${instance}/streams/${videoId}`, { timeout: 6000 });
+          if (pipedRes.data && pipedRes.data.audioStreams && pipedRes.data.audioStreams.length > 0) {
+            const streams = pipedRes.data.audioStreams;
+            const title = cleanTrackTitle(pipedRes.data.title || 'YouTube Audio');
+            const uploader = pipedRes.data.uploader || 'YouTube Artist';
+            const durationSec = pipedRes.data.duration || 180;
+            const thumbnail = pipedRes.data.thumbnailUrl || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+            const formats = streams.map(st => {
+              const abr = st.bitrate ? Math.round(st.bitrate / 1000) : 128;
+              const qualityTier = abr >= 160 ? 'High' : (abr >= 96 ? 'Medium' : 'Data Saver');
+              return {
+                quality: qualityTier,
+                bitrate: `${abr} kbps`,
+                format: (st.format || 'm4a').toLowerCase().replace('webm', 'opus'),
+                estimatedSizeMb: estimateSizeMb(abr, durationSec),
+                streamUrl: st.url,
+                formatId: String(st.format || '140')
+              };
+            });
+
+            const payloadResponse = {
+              id: `yt_${videoId}`,
+              title: title,
+              artist: uploader,
+              album: 'YouTube Imports',
+              duration: durationSec,
+              thumbnailUrl: thumbnail,
+              streamUrl: formats[0].streamUrl,
+              availableFormats: formats,
+              isYoutubeImport: true
+            };
+
+            console.log(`[Extractor] ⚡ Resolved via Piped instance (${instance}) for "${title}"`);
+            return res.json(payloadResponse);
+          }
+        } catch (pipedErr) {}
+      }
+
+      console.warn(`[Extractor] ⚠️ Piped failed. Trying YouTube oEmbed + JioSaavn fallback...`);
+
+      // Strategy 3: YouTube oEmbed + JioSaavn Instant Fallback Matcher
       try {
         const oembedRes = await axios.get('https://www.youtube.com/oembed', {
           params: { url: targetUrl, format: 'json' },
@@ -376,8 +425,6 @@ app.get('/api/youtube/download', async (req, res) => {
       : cleanUrl;
     const customTitle = req.query.title ? cleanTrackTitle(req.query.title) : `yt_${videoId}`;
 
-    // Select a native audio stream. No -x/ffmpeg post-processing is used, so
-    // the source container and codec are streamed without re-encoding or dynamic range compression.
     let formatFilter = 'bestaudio/140/251/139';
     if (formatId && formatId !== 'undefined') {
       formatFilter = `${formatId}/${formatFilter}`;
@@ -395,9 +442,9 @@ app.get('/api/youtube/download', async (req, res) => {
 
     console.log(`[Downloader] ⬇️ Streaming audio (${formatFilter}) for: ${targetUrl} (File: ${sanitizedFileName})`);
 
-    // 1. Resolve direct audio stream URL with yt-dlp -g to preserve intact container headers (no moov/fragment corruption on 30-40 min audio)
+    // Strategy 1: Resolve direct audio stream URL with yt-dlp -g
     execFile(YTDLP_BIN, [
-      '--extractor-args', 'youtube:player_client=android,ios,web',
+      '--extractor-args', 'youtube:player_client=android_music,android,ios,web',
       '-f', formatFilter,
       '-g',
       '--no-playlist',
@@ -407,7 +454,7 @@ app.get('/api/youtube/download', async (req, res) => {
     ], { timeout: 35000 }, async (err, stdout, stderr) => {
       if (!err && stdout && stdout.trim().startsWith('http')) {
         const directAudioUrl = stdout.trim().split('\n')[0].trim();
-        console.log(`[Downloader] 🎯 Resolved direct audio CDN URL for: ${targetUrl}`);
+        console.log(`[Downloader] 🎯 Resolved direct audio CDN URL via yt-dlp for: ${targetUrl}`);
 
         try {
           const response = await axios.get(directAudioUrl, {
@@ -434,16 +481,52 @@ app.get('/api/youtube/download', async (req, res) => {
         }
       }
 
-      // Fallback: spawn yt-dlp stream if -g resolution fails
+      // Strategy 2: Fallback to Piped stream proxy
+      const pipedInstances = [
+        'https://pipedapi.kavin.rocks',
+        'https://api.piped.private.coffee',
+        'https://pipedapi.leptons.xyz'
+      ];
+
+      for (const instance of pipedInstances) {
+        try {
+          const pipedRes = await axios.get(`${instance}/streams/${videoId}`, { timeout: 8000 });
+          if (pipedRes.data && pipedRes.data.audioStreams && pipedRes.data.audioStreams.length > 0) {
+            const stream = pipedRes.data.audioStreams[0];
+            if (stream && stream.url) {
+              console.log(`[Downloader] ⚡ Streaming via Piped fallback (${instance}) for ${targetUrl}`);
+              const streamRes = await axios.get(stream.url, {
+                responseType: 'stream',
+                timeout: 120000,
+                headers: {
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                  'Accept': '*/*'
+                }
+              });
+
+              res.setHeader('Content-Type', streamRes.headers['content-type'] || (outputExtension === 'webm' ? 'audio/webm' : 'audio/mp4'));
+              if (streamRes.headers['content-length']) {
+                res.setHeader('Content-Length', streamRes.headers['content-length']);
+              }
+              res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFileName}"; filename*=UTF-8''${sanitizedFileName}`);
+              res.setHeader('Accept-Ranges', 'bytes');
+
+              streamRes.data.pipe(res);
+              return;
+            }
+          }
+        } catch (pipedErr) {}
+      }
+
+      // Strategy 3: Spawn yt-dlp process
       res.setHeader('Content-Type', outputExtension === 'webm' ? 'audio/webm' : 'audio/mp4');
       res.setHeader('Content-Disposition', `attachment; filename="${sanitizedFileName}"; filename*=UTF-8''${sanitizedFileName}`);
       res.setHeader('Accept-Ranges', 'bytes');
 
       const ytDlpProcess = spawn(YTDLP_BIN, [
-        '--extractor-args', 'youtube:player_client=android,ios,web',
+        '--extractor-args', 'youtube:player_client=android_music,android,ios,web',
         '-f', formatFilter,
         '--buffer-size', '64K',
-        '-q', '0',
         '--audio-quality', '0',
         '-o', '-',
         '--no-playlist',
@@ -564,7 +647,6 @@ app.get('/api/search/youtube', async (req, res) => {
       '--no-warnings',
       '--flat-playlist',
       '--no-check-certificates',
-      '-q', '0',
       '--',
       `ytsearch${limit}:${cleanQuery}`,
     ];

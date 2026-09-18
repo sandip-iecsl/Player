@@ -429,3 +429,26 @@ All automated tests run via `flutter test`:
 3. Search `"तुम ही हो"` (Devanagari) → Confirm Hindi transliteration match.
 4. Enable Airplane mode → Confirm offline storage search functions.
 5. Import YouTube link → Confirm multi-tier format modal renders (High/Medium/Low).
+6. Tap hardware back button on search results → Confirms query is dismissed before switching tabs.
+7. Connect USB DAC or Bluetooth Hi-Fi headphones on Android 14+ device → Confirms Bit-Perfect badge displays live sample rate (e.g. 48.0 kHz / 24-bit).
+
+---
+
+## 22. Android 14+ Bit-Perfect Audio Engine & Navigation Architecture
+
+### A. Bit-Perfect Direct HAL Architecture
+- Android 14 (API 34) introduced `AudioMixerAttributes.MIXER_BEHAVIOR_BIT_PERFECT` to bypass Android OS software mixing, volume scaling, and software sample rate conversion (SRC).
+- Implemented via Kotlin MethodChannel `aura_player/bit_perfect` (`MainActivity.kt`) and Dart service `BitPerfectService`.
+- Automatically queries available `AudioDeviceInfo` and applies `AudioManager.setPreferredMixerAttributes` with stereo PCM encoding.
+- Live sample rate and bit-depth telemetry (e.g. `44.1 kHz`, `48.0 kHz`, `96.0 kHz`, `192.0 kHz / MHz DSD`) is broadcast across Riverpod `audioSpecsProvider` and displayed in `FloatingMiniPlayer` and `FullPlayer`.
+- Audiophile modal allows one-tap toggling of Bit-Perfect HAL mode with active DAC hotplug detection.
+
+### B. Device Hardware Back Navigation Stack
+- `MainScreen` maintains a persistent navigation tab history stack `_tabHistory`.
+- Sequenced back press execution:
+  1. If Full Player Sliding Panel is open → Collapses panel.
+  2. If Search Tab has active live/submitted query or search results → Clears search and resets pagination.
+  3. If nested tab navigator has a pushed sub-route (`Navigator.canPop()`) → Pops sub-route.
+  4. If root dialog/modal is open (`navigatorKey.currentState.canPop()`) → Pops modal.
+  5. If tab history stack length > 1 → Pops to previous tab in user's navigation journey.
+  6. If on root Home tab → Prompts with double-tap confirmation toast before exiting application.

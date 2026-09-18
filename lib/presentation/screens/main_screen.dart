@@ -178,7 +178,14 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
       }
     } catch (_) {}
     
-    // 2. Check if the current tab's nested navigator has a sub-page to pop (e.g. PlaylistScreen, LocalSongsScreen)
+    // 2. If on Search tab and user has active query/results, clear search first before navigating away
+    if (_currentIndex == 1 && (_searchKey.currentState?.hasActiveSearch ?? false)) {
+      _lastBackPressTime = null;
+      _searchKey.currentState?.handleBack();
+      return;
+    }
+
+    // 3. Check if the current tab's nested navigator has a sub-page to pop (e.g. PlaylistScreen, LocalSongsScreen)
     final currentNav = _navigatorKeys[_currentIndex].currentState;
     if (currentNav != null && currentNav.canPop()) {
       _lastBackPressTime = null;
@@ -186,14 +193,14 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
       return;
     }
 
-    // 3. Check if global root modal/dialog stack can pop
+    // 4. Check if global root modal/dialog stack can pop
     if (navigatorKey.currentState != null && navigatorKey.currentState!.canPop()) {
       _lastBackPressTime = null;
       navigatorKey.currentState!.pop();
       return;
     }
 
-    // 4. Pop and navigate back through tab history (e.g. Settings -> Library -> Search -> Home)
+    // 5. Pop and navigate back through tab history (e.g. Settings -> Library -> Search -> Home)
     if (_tabHistory.length > 1) {
       _lastBackPressTime = null;
       setState(() {

@@ -18,6 +18,7 @@ import 'offline_storage_service.dart';
 import 'linguistic_engine.dart';
 import 'direct_jiosaavn_service.dart';
 import 'youtube_extractor_service.dart';
+import 'bit_perfect_service.dart';
 
 late AudioServiceHandler audioHandler;
 
@@ -1012,6 +1013,9 @@ class AudioServiceHandler extends BaseAudioHandler {
       }
 
       _currentSong = song;
+
+      // Configure Bit-Perfect mode & sample rate attributes for Android 14+ / USB DAC
+      unawaited(BitPerfectService().configureForSong(song));
 
       _playHistory.add(song);
       if (_playHistory.length > 50) {

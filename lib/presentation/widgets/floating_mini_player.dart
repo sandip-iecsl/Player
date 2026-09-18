@@ -7,6 +7,7 @@ import '../providers/audio_provider.dart';
 import 'playlist_dialogs.dart';
 import 'default_album_art.dart';
 import '../../core/constants/app_colors.dart';
+import '../../data/services/bit_perfect_service.dart';
 
 /// Floating mini player — completely independent pill widget.
 /// Floats above the bottom nav bar, no connection to SlidingUpPanel.
@@ -85,6 +86,7 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
             duration.inMilliseconds.clamp(1, 999999999))
         .clamp(0.0, 1.0);
     final audio = ref.read(audioServiceProvider);
+    final specs = ref.watch(audioSpecsProvider).valueOrNull ?? BitPerfectService().currentSpecs;
 
     return SlideTransition(
       position: _slideAnim,
@@ -201,14 +203,38 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 3),
-                              Text(
-                                widget.song.artist,
-                                style: TextStyle(
-                                  color: AppColors.textSecondary,
-                                  fontSize: 11.5,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
+                                Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      widget.song.artist,
+                                      style: TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 11.5,
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                    decoration: BoxDecoration(
+                                      color: _accent.withOpacity(0.18),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: _accent.withOpacity(0.35), width: 0.8),
+                                    ),
+                                    child: Text(
+                                      specs.sampleRateDisplay,
+                                      style: TextStyle(
+                                        color: _accent,
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.2,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ],
                           ),

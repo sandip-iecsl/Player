@@ -224,6 +224,18 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
     });
   }
 
+  /// Check if search query or active results are currently shown
+  bool get hasActiveSearch => _liveQuery.isNotEmpty || _submittedQuery.isNotEmpty || _showResults;
+
+  /// Handles back button press: clears active search and returns true if handled
+  bool handleBack() {
+    if (hasActiveSearch) {
+      _clearSearch();
+      return true;
+    }
+    return false;
+  }
+
   /// Called by MainScreen when this tab is deselected — clears state.
   void clearState() {
     _searchController.clear();
