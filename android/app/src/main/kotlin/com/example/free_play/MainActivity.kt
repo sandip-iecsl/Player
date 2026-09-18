@@ -500,30 +500,32 @@ class MainActivity : AudioServiceActivity() {
                     device.type != AudioDeviceInfo.TYPE_WIRED_HEADPHONES) continue
 
                 try {
-                    // Validate device supports the requested sample rate
+                    // Bit-perfect means an exact device format match.  Never
+                    // silently substitute a nearby rate: that would cause
+                    // resampling while the UI still reported bit-perfect.
                     val supportedSampleRates = device.sampleRates
-                    val actualSampleRate = if (supportedSampleRates.isEmpty() || supportedSampleRates.contains(sampleRate)) {
-                        sampleRate
-                    } else {
-                        // Fall back to highest supported rate ≤ requested
-                        supportedSampleRates.filter { it <= sampleRate }.maxOrNull() ?: 48000
+                    if (supportedSampleRates.isNotEmpty() && !supportedSampleRates.contains(sampleRate)) {
+                        android.util.Log.d("BitPerfect", "Skipping ${device.productName}: $sampleRate Hz is unsupported")
+                        continue
                     }
 
-                    // Validate device supports the requested encoding, fall back gracefully
+                    // Likewise, a source that requires 24/32-bit PCM must not
+                    // be down-converted and called bit-perfect.
                     val supportedEncodings = device.encodings
-                    val actualEncoding = when {
-                        bitDepth == 32 && (supportedEncodings.isEmpty() || supportedEncodings.contains(AudioFormat.ENCODING_PCM_32BIT)) ->
-                            AudioFormat.ENCODING_PCM_32BIT
-                        bitDepth >= 24 && (supportedEncodings.isEmpty() || supportedEncodings.contains(AudioFormat.ENCODING_PCM_24BIT_PACKED)) ->
-                            AudioFormat.ENCODING_PCM_24BIT_PACKED
-                        else ->
-                            AudioFormat.ENCODING_PCM_16BIT
+                    val requestedEncoding = when {
+                        bitDepth >= 32 -> AudioFormat.ENCODING_PCM_32BIT
+                        bitDepth >= 24 -> AudioFormat.ENCODING_PCM_24BIT_PACKED
+                        else -> AudioFormat.ENCODING_PCM_16BIT
+                    }
+                    if (supportedEncodings.isNotEmpty() && !supportedEncodings.contains(requestedEncoding)) {
+                        android.util.Log.d("BitPerfect", "Skipping ${device.productName}: requested PCM encoding is unsupported")
+                        continue
                     }
 
                     val format = AudioFormat.Builder()
-                        .setSampleRate(actualSampleRate)
+                        .setSampleRate(sampleRate)
                         .setChannelMask(AudioFormat.CHANNEL_OUT_STEREO)
-                        .setEncoding(actualEncoding)
+                        .setEncoding(requestedEncoding)
                         .build()
 
                     val mixerAttrs = AudioMixerAttributes.Builder(format)
@@ -534,7 +536,7 @@ class MainActivity : AudioServiceActivity() {
                     applied = true
                     android.util.Log.d("BitPerfect",
                         "✅ Applied MIXER_BEHAVIOR_BIT_PERFECT to ${device.productName} " +
-                        "(${actualSampleRate}Hz / ${when(actualEncoding) {
+                        "(${sampleRate}Hz / ${when(requestedEncoding) {
                             AudioFormat.ENCODING_PCM_32BIT -> "32-bit"
                             AudioFormat.ENCODING_PCM_24BIT_PACKED -> "24-bit"
                             else -> "16-bit"

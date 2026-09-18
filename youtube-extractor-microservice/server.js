@@ -50,13 +50,15 @@ function normalizeYouTubeUrl(inputUrl) {
       if (!mixId) {
         mixId = listParam.replace(/^(RDMM|RDCL|RD)/, '');
       }
-      return `https://www.youtube.com/watch?v=${mixId}`;
+      return STRICT_VIDEO_ID_REGEX.test(mixId || '')
+        ? `https://www.youtube.com/watch?v=${mixId}`
+        : trimmed;
     }
 
     // Check if standard playlist link has a direct video parameter
     if (urlObj.pathname.includes('playlist')) {
       const v = urlObj.searchParams.get('v');
-      if (v) {
+      if (v && STRICT_VIDEO_ID_REGEX.test(v)) {
         return `https://www.youtube.com/watch?v=${v}`;
       }
     }
@@ -104,17 +106,37 @@ function extractVideoId(url) {
   const trimmed = url.trim();
   if (STRICT_VIDEO_ID_REGEX.test(trimmed)) return trimmed;
 
-  const normalized = normalizeYouTubeUrl(trimmed);
-  const match1 = normalized.match(/(?:watch\?v=|youtu\.be\/|shorts\/|embed\/|v\/)([a-zA-Z0-9_\-]{11})/);
-  if (match1 && match1[1] && STRICT_VIDEO_ID_REGEX.test(match1[1])) return match1[1];
-  
-  const match2 = url.match(/(?:list=(?:RDMM|RDCL|RD))([a-zA-Z0-9_\-]{11})/);
-  if (match2 && match2[1] && STRICT_VIDEO_ID_REGEX.test(match2[1])) return match2[1];
+  // Do not call normalizeYouTubeUrl from here.  Normalization deliberately
+  // calls this parser first; mutual calls used to recurse until a stack
+  // overflow before falling back to the raw URL.
+  try {
+    const parsed = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+    const host = parsed.hostname.toLowerCase().replace(/^www\./, '');
+    let candidate = null;
 
-  const match3 = url.match(/(?:v=)([a-zA-Z0-9_\-]{11})/);
-  if (match3 && match3[1] && STRICT_VIDEO_ID_REGEX.test(match3[1])) return match3[1];
-  
-  return null;
+    if (host === 'youtu.be') {
+      candidate = parsed.pathname.split('/').filter(Boolean)[0];
+    } else if (host === 'youtube.com' || host === 'music.youtube.com' || host === 'm.youtube.com') {
+      const segments = parsed.pathname.split('/').filter(Boolean);
+      if (parsed.pathname === '/watch' || parsed.pathname === '/playlist') {
+        candidate = parsed.searchParams.get('v');
+      } else if (['shorts', 'embed', 'live', 'v'].includes(segments[0])) {
+        candidate = segments[1];
+      }
+
+      // A generated YouTube Mix has no `v` parameter; its seed is stored in
+      // list=RD<videoId>.  We accept only the strict 11-character seed.
+      if (!candidate) {
+        const mix = parsed.searchParams.get('list');
+        const mixMatch = mix?.match(/^(?:RDMM|RDCL|RD)([a-zA-Z0-9_-]{11})$/);
+        candidate = mixMatch?.[1] ?? null;
+      }
+    }
+
+    return candidate && STRICT_VIDEO_ID_REGEX.test(candidate) ? candidate : null;
+  } catch (_) {
+    return null;
+  }
 }
 
 /**
