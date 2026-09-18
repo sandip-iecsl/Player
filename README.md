@@ -390,10 +390,8 @@ client remains unchanged.
 > **API Key Protection**: YouTube API keys must **NEVER** be committed into git or hardcoded into Flutter client source code.
 - Keys are loaded from `process.env.YOUTUBE_API_KEY` on the backend server only.
 - Client requests go through the backend `/api/search/youtube` proxy.
-<<<<<<< HEAD
 - YouTube session cookies are loaded from `process.env.YOUTUBE_COOKIES_BASE64` and written to the ignored `youtube-extractor-microservice/cookies.txt` file at startup.
 - `/health` exposes `youtubeCookiesConfigured: true|false`; it never returns cookie data.
-=======
 - Do not treat a successful fallback response as proof that the original YouTube video was
   resolved. Validate the response source and video ID before caching or playback.
 - Cloud deployments should keep yt-dlp current. If logs contain `Sign in to confirm you're
@@ -402,7 +400,6 @@ client remains unchanged.
   YouTube Data API/search path. Never commit cookie files or browser credentials.
 - The extractor accepts `YOUTUBE_COOKIES_BASE64` or `YOUTUBE_COOKIES_FILE` for a secret
   Netscape-format cookie file. `/health` reports only `ytDlpCookiesConfigured: true|false`.
->>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
 
 ---
 
@@ -497,7 +494,6 @@ The YouTube extractor accepts these backend variables:
    ```bash
    npm start
    ```
-<<<<<<< HEAD
 3. For local YouTube extraction, place an exported Netscape-format `cookies.txt` in this directory, or set `YOUTUBE_COOKIES_BASE64` before starting the service:
   ```bash
   export YOUTUBE_COOKIES_BASE64="$(base64 -w 0 cookies.txt)"
@@ -508,14 +504,12 @@ The YouTube extractor accepts these backend variables:
   curl http://localhost:3000/health
   ```
   The response should include `"youtubeCookiesConfigured":true` when cookies are available.
-=======
 3. On Render, configure `YOUTUBE_COOKIES_BASE64` with a base64-encoded Netscape-format
   cookie file from an authorized session. Keep the cookie value in Render Secret Files or
   environment secrets only; never commit it.
 4. Redeploy and verify `/health` returns `ytDlpCookiesConfigured: true`. Then test
   `/api/youtube/extract` with a known public video. If authentication is unavailable, the
   service fails cleanly instead of playing a different JioSaavn recording.
->>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
 
 ---
 
@@ -554,10 +548,8 @@ flutter test test/core/search
 ## 27. Troubleshooting & Diagnostics
 - **Search returns empty**: Verify network connection and backend microservice health (`GET /health`).
 - **Circuit Breaker tripped**: Check `ProviderHealthMonitor` diagnostics to inspect consecutive error reasons.
-<<<<<<< HEAD
 - **YouTube download failed**: Ensure `yt-dlp` binary on the backend server is updated to the latest release.
 - **YouTube bot checks persist**: Confirm `/health` reports `youtubeCookiesConfigured:true`, verify the value is base64-encoded Netscape cookie content, and redeploy after updating the secret. Never paste raw cookie contents into logs or source control.
-=======
 - **YouTube download failed**: Check backend logs for `Sign in to confirm you're not a bot`.
   Update the yt-dlp binary and configure authenticated cookies through the hosting provider's
   secret storage if permitted. Do not commit cookies. Also verify `/health` and confirm that
@@ -568,7 +560,6 @@ flutter test test/core/search
 - **Duration or size is incorrect**: Old cached metadata may contain fabricated fallback
   values. The current cache uses `yt_imports_cache_v2`; re-import the link so duration and
   format size are derived from the resolved stream, or remain unknown until the player loads.
->>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
 
 ---
 
@@ -633,14 +624,11 @@ Certain actions cannot be performed autonomously by code and require manual web 
 1. **Render Dashboard**:
    - **WHERE**: https://dashboard.render.com/
    - **WHAT TO CLICK**: New Web Service → Connect repository (`youtube-extractor-microservice`)
-<<<<<<< HEAD
-  - **ENVIRONMENT VARIABLES**: Set `PORT=3000`, `YOUTUBE_API_KEY=<key>`, and the secret `YOUTUBE_COOKIES_BASE64=<base64-cookie-content>`
-  - **COOKIE PREPARATION**: Export YouTube cookies in Netscape `cookies.txt` format, then encode them locally with `base64 -w 0 cookies.txt` before adding the result to Render.
-=======
    - **ENVIRONMENT VARIABLES**: Set `PORT=3000`, `YOUTUBE_API_KEY=<key>`; if your approved
      deployment supports authenticated yt-dlp cookies, configure them as a hosting secret and
      pass them to yt-dlp without committing the cookie file.
->>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
+   - **COOKIE PREPARATION**: Export authorized YouTube cookies in Netscape format and encode
+     them locally before adding the value to Render. Never commit the cookie file or secret.
    - **FREQUENCY**: Once
 
 ### D. PHYSICAL ANDROID DEVICE TEST CHECKLIST

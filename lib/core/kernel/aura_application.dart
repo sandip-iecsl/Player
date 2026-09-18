@@ -46,30 +46,36 @@ class AuraApplication {
 
     debugPrint('[AuraApplication] 🚀 Starting bootstrapping sequence...');
 
-    // 1. Initialize configurations
-    await ConfigurationManager().init();
+    // 1. Initialize configurations — fire-and-forget (does a Firestore server
+    //    fetch which must never block the UI boot path)
+    ConfigurationManager().init().catchError(
+      (e) => debugPrint('[AuraApplication] ⚠️ ConfigManager init error: $e'),
+    );
 
-    // 2. Initialize Firebase Anonymous Auth & block until UID is ready
+    // 2. Initialize Firebase Anonymous Auth with strict timeout
     final auth = FirebaseAuth.instance;
     User? currentUser = auth.currentUser;
     
     if (currentUser == null) {
       debugPrint('[AuraApplication] 🔑 Authenticating anonymously...');
       try {
-        final credential = await auth.signInAnonymously();
+        final credential = await auth.signInAnonymously().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => throw Exception('signInAnonymously timed out after 5s'),
+        );
         currentUser = credential.user;
       } catch (e) {
-        debugPrint('[AuraApplication] ❌ Anonymous Auth failed: $e');
-        rethrow;
+        debugPrint('[AuraApplication] ❌ Anonymous Auth failed (non-fatal): $e');
+        // Don't rethrow — allow rest of app to continue without UID
       }
     }
 
-    if (currentUser == null) {
-      throw Exception('AuraApplication: Anonymous authentication returned null user.');
+    if (currentUser != null) {
+      _authenticatedUid = currentUser.uid;
+      debugPrint('[AuraApplication] 🔑 Authenticated anonymously under UID: $_authenticatedUid');
+    } else {
+      debugPrint('[AuraApplication] ⚠️ Running without authenticated UID (offline mode)');
     }
-
-    _authenticatedUid = currentUser.uid;
-    debugPrint('[AuraApplication] 🔑 Authenticated anonymously under UID: $_authenticatedUid');
 
     // 3. Register Dependency bindings
     _registerDependencies();

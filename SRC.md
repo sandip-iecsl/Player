@@ -351,14 +351,12 @@ $$\text{FinalScore} = (\text{TextRel} \times 0.42) + (\text{Pop} \times 0.14) + 
 ## 16. Backend Microservice Endpoints
 
 Located in `youtube-extractor-microservice/server.js`:
-<<<<<<< HEAD
 - `GET /health`: Service health, engine version, and non-sensitive `youtubeCookiesConfigured` status.
 - `GET /api/search/youtube?q=...&limit=20`: Server-side YouTube Data API v3 proxy with yt-dlp fallback.
 - `POST /api/youtube/extract`: Multi-format stream resolution.
 - `GET /api/youtube/download?url=...&quality=High`: Direct audio binary stream.
 
 All yt-dlp calls receive `--cookies <path>` when `cookies.txt` exists. At startup, the service decodes `YOUTUBE_COOKIES_BASE64` into `youtube-extractor-microservice/cookies.txt`; a local cookie file is also supported for development.
-=======
 - `GET /health`: Service health and engine version check.
 - `GET /api/search/youtube?q=...&limit=20`: Server-side YouTube Data API v3 proxy with best-effort yt-dlp fallback.
 - `POST /api/youtube/extract`: Multi-format stream resolution.
@@ -369,7 +367,6 @@ yt-dlp. This is an upstream bot-verification failure, not a valid track-resoluti
 The JioSaavn fallback remains a separate third-party integration and is not modified. Its
 responses are marked `source: 'jiosaavn-fallback'`; the Flutter YouTube import flow rejects
 that marker so a YouTube screen item cannot play a different JioSaavn recording.
->>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
 
 ---
 
@@ -381,14 +378,11 @@ Template available in `.env.example`:
 - `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET`: Spotify credentials.
 - `MONGODB_DATA_API_URL` / `MONGODB_API_KEY`: Atlas search endpoints.
 - `DEEZER_ENABLED`: `true` / `false`.
-<<<<<<< HEAD
 - `PORT`: HTTP port for the microservice; defaults to `3000`.
 - `YOUTUBE_COOKIES_BASE64`: Base64-encoded Netscape-format YouTube cookies for yt-dlp authentication.
-=======
 - `YOUTUBE_COOKIES_BASE64`: Optional base64-encoded Netscape-format YouTube cookies for
    authenticated yt-dlp requests in cloud environments.
 - `YOUTUBE_COOKIES_FILE`: Optional path to a mounted Netscape-format cookie file.
->>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
 
 ---
 
@@ -456,14 +450,13 @@ All automated tests run via `flutter test`:
 1. **Render Dashboard**:
    - **WHERE**: https://dashboard.render.com/
    - **WHAT TO CLICK**: New Web Service → Connect `youtube-extractor-microservice`
-<<<<<<< HEAD
    - **ENVIRONMENT VARIABLES**: Set `PORT=3000`, `YOUTUBE_API_KEY=<key>`, and `YOUTUBE_COOKIES_BASE64=<base64-cookie-content>`.
    - **COOKIE PREPARATION**: Export YouTube cookies in Netscape `cookies.txt` format and run `base64 -w 0 cookies.txt` locally before saving the output as the Render secret.
-=======
-    - **ENVIRONMENT VARIABLES**: Set `PORT=3000`, `YOUTUBE_API_KEY=<key>`. If authenticated
+   - **ENVIRONMENT VARIABLES**: Set `PORT=3000`, `YOUTUBE_API_KEY=<key>`. If authenticated
        yt-dlp cookies are legally and operationally permitted, provide them through secret
        storage only; never commit browser cookies or credentials.
->>>>>>> 40f8214 (feat: add YouTube audio extraction microservice and client playback models)
+   - **COOKIE PREPARATION**: Export authorized YouTube cookies in Netscape format and encode
+     them locally before saving the output as a Render secret. Never commit the cookie file.
    - **FREQUENCY**: Once
 
 ### D. PHYSICAL ANDROID DEVICE TEST PROCEDURE

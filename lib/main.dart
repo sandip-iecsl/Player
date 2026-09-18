@@ -37,7 +37,12 @@ void main() async {
     return true; // Return true = error is handled, do NOT terminate
   };
 
-  await dotenv.load(fileName: '.env');
+  try {
+    await dotenv.load(fileName: '.env');
+    debugPrint('[Main] ✅ .env loaded successfully');
+  } catch (e) {
+    debugPrint('[Main] ⚠️ .env load failed (running with empty env): $e');
+  }
   await Hive.initFlutter();
   
   // Open recommendation engine boxes
@@ -78,18 +83,24 @@ void main() async {
     );
     debugPrint('🔥 Firebase initialized successfully for Global Engine.');
     
-    // Bootstrap the central AuraApplication Kernel
-    await AuraApplication().bootstrap();
-    
+    // Bootstrap the central AuraApplication Kernel with a strict timeout.
+    // If auth/network is slow, we must NOT block runApp() — launch in background.
+    AuraApplication().bootstrap().timeout(
+      const Duration(seconds: 8),
+      onTimeout: () {
+        debugPrint('[Bootstrap] ⚠️ Bootstrap timed out — running app anyway.');
+      },
+    ).catchError((e) {
+      debugPrint('[Bootstrap] ❌ Bootstrap error (non-fatal): $e');
+    });
+
     // Initialize Cloud Sync Service for anonymous auth and data restore
-    // We don't await this to prevent network hangs from keeping the app stuck on splash
     CloudSyncService().init().catchError((e) => debugPrint('CloudSync error: $e'));
 
     // Sync ML Engine Synonyms
     SearchEnhancer.syncFromFirestore();
     
     // Init FCM token service
-    // We don't await this either for the same reason
     FcmTokenService().init().catchError((e) => debugPrint('FCM error: $e'));
   } catch (e) {
     debugPrint('⚠️ Firebase not configured natively yet. Global engine will skip sync: $e');
