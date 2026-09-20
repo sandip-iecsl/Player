@@ -3,13 +3,15 @@ const cors = require('cors');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
-const { spawn, execFile } = require('child_process');
+const { spawn, execFile, execFileSync } = require('child_process');
 const axios = require('axios');
 require('dotenv').config();
 const {
   YTDLP_BIN,
   buildYtDlpArgs,
   diagnostics,
+  PYTHON_BIN,
+  YTMUSIC_BRIDGE,
 } = require('./yt_dlp_config');
 
 process.on('uncaughtException', (error) => {
@@ -181,6 +183,26 @@ function isReadableAudioFile(filePath) {
   }
 }
 
+function queryYtMusic(operation, ...args) {
+  if (!fs.existsSync(YTMUSIC_BRIDGE)) return null;
+  try {
+    const output = execFileSync(PYTHON_BIN, [YTMUSIC_BRIDGE, operation, ...args], {
+      encoding: 'utf8',
+      timeout: operation === 'search' ? 10000 : 8000,
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    const payload = JSON.parse(output);
+    if (payload.error) {
+      console.warn(`[YouTube Music API] ${operation} failed: ${payload.error}: ${payload.message || 'unknown error'}`);
+      return null;
+    }
+    return payload;
+  } catch (error) {
+    console.warn(`[YouTube Music API] ${operation} unavailable: ${error.message}`);
+    return null;
+  }
+}
+
 /**
  * Health check
  */
@@ -218,6 +240,11 @@ app.post('/api/youtube/extract', async (req, res) => {
 
     console.log(`[Extractor] 🔍 Resolving multi-format audio streams with yt-dlp for: ${targetUrl} (ID: ${videoId})`);
 
+    const ytmusicMetadata = videoId ? queryYtMusic('song', videoId) : null;
+    if (ytmusicMetadata && ytmusicMetadata.videoId !== videoId) {
+      return youtubeUnavailable(res, videoId, 'SOURCE_ID_MISMATCH', 'YouTube Music metadata did not match the requested video.');
+    }
+
     // yt-dlp dump-single-json to parse full format list without re-encoding
     const ytDlpArgs = buildYtDlpArgs({
       dumpJson: true,
@@ -232,11 +259,11 @@ app.post('/api/youtube/extract', async (req, res) => {
           if (info.id && info.id !== videoId) {
             throw new Error(`yt-dlp returned unexpected video ID ${info.id}`);
           }
-          const rawTitle = info.title || 'YouTube Audio';
+          const rawTitle = ytmusicMetadata?.title || info.title || 'YouTube Audio';
           const cleanTitle = cleanTrackTitle(rawTitle);
-          const artistName = info.artist || info.uploader || info.channel || 'YouTube Artist';
+          const artistName = ytmusicMetadata?.artist || info.artist || info.uploader || info.channel || 'YouTube Artist';
           const durationSec = Math.round(Number(info.duration) || 0) || 180;
-          const thumbnail = info.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+          const thumbnail = ytmusicMetadata?.thumbnailUrl || info.thumbnail || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
           // Filter out audio-only streams or video formats with audio
           const formats = Array.isArray(info.formats) ? info.formats : [];
@@ -651,6 +678,18 @@ app.get('/api/search/youtube', async (req, res) => {
 
     const cleanQuery = query.trim();
     console.log(`[Search] 🔍 Searching YouTube for: "${cleanQuery}" (limit: ${limit})`);
+
+    const ytmusicSearch = queryYtMusic('search', cleanQuery, String(limit));
+    if (Array.isArray(ytmusicSearch?.results)) {
+      const results = ytmusicSearch.results.filter((item) =>
+        item.youtubeId && STRICT_VIDEO_ID_REGEX.test(item.youtubeId),
+      );
+      if (results.length) {
+        console.log(`[Search] ✅ ytmusicapi returned ${results.length} tracks for "${cleanQuery}"`);
+        return res.json({ query: cleanQuery, source: 'ytmusicapi', results });
+      }
+      console.warn(`[Search] ⚠️ ytmusicapi returned no valid song results for "${cleanQuery}"; using fallback search.`);
+    }
 
     const apiKey = process.env.YOUTUBE_API_KEY?.trim();
 

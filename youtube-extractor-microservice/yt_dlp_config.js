@@ -8,6 +8,8 @@ const YTDLP_BIN = process.env.YTDLP_BIN || (fs.existsSync(path.join(__dirname, p
   ? path.join(__dirname, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp')
   : 'yt-dlp');
 const JS_RUNTIME = process.env.YTDLP_JS_RUNTIME || (process.platform === 'win32' ? 'node' : '/usr/local/bin/deno');
+const PYTHON_BIN = process.env.YTMUSICAPI_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
+const YTMUSIC_BRIDGE = path.join(__dirname, 'ytmusic_bridge.py');
 
 function fileIsReadable(filePath) {
   if (!filePath) return false;
@@ -70,12 +72,16 @@ function readCommandVersion(command, args = ['--version']) {
 function diagnostics() {
   const nodeVersion = process.versions.node;
   const jsRuntimeVersion = readCommandVersion(JS_RUNTIME, ['--version']);
+  const pythonVersion = readCommandVersion(PYTHON_BIN, ['--version']);
   return {
     nodeVersion,
+    pythonVersion,
     ytDlpVersion: readCommandVersion(YTDLP_BIN),
     denoVersion: readCommandVersion('deno', ['--version']),
     jsRuntime: JS_RUNTIME,
     jsRuntimeVersion,
+    ytmusicapiConfigured: fs.existsSync(YTMUSIC_BRIDGE),
+    ytmusicapiPython: PYTHON_BIN,
     ejsConfigured: true,
     jsRuntimeConfigured: Boolean(jsRuntimeVersion),
     cookiesConfigured: Boolean(cookiePath),
@@ -87,10 +93,12 @@ function diagnostics() {
 module.exports = {
   COOKIE_RUNTIME_PATH,
   JS_RUNTIME,
+  PYTHON_BIN,
   SERVER_VERSION,
   YTDLP_BIN,
   buildYtDlpArgs,
   cookiePath,
   diagnostics,
   fileIsReadable,
+  YTMUSIC_BRIDGE,
 };

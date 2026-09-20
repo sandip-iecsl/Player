@@ -3,7 +3,7 @@ FROM node:22-bookworm-slim
 
 # Install runtime dependencies
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg unzip \
+    && apt-get install -y --no-install-recommends ca-certificates curl ffmpeg unzip python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
 ARG DENO_VERSION=2.3.6
@@ -25,6 +25,9 @@ WORKDIR /app
 # Install Node dependencies first (layer caching)
 COPY package*.json ./
 RUN npm install --omit=dev --no-audit --no-fund
+
+COPY requirements.txt ./
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
 # Copy application source (excludes files in .dockerignore)
 COPY . .

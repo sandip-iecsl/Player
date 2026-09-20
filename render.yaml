@@ -22,3 +22,5 @@
         value: aura_player
       - key: YTDLP_JS_RUNTIME
         value: /usr/local/bin/deno
+      - key: YTMUSICAPI_PYTHON
+        value: python3

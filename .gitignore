@@ -1,0 +1,20 @@
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+
+# Flutter and Dart build output
+.dart_tool/
+build/
+
+# Node dependencies and local service files
+node_modules/
+youtube-extractor-microservice/node_modules/
+youtube-extractor-microservice/.env
+
+# Local tools and generated artifacts
+*.log
+cookies.txt
+yt-dlp
+yt-dlp.exe
+.DS_Store
