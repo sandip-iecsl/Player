@@ -141,7 +141,7 @@ class MongoDBSearchProvider implements SearchProviderClient {
               playableUrl: previewUrl ?? ytUrl,
               previewUrl: previewUrl,
               isDownloadable: true,
-              matchedProviders: [SearchProviderType.mongodb],
+              matchedProviders: const [SearchProviderType.mongodb],
             ));
           }
         }

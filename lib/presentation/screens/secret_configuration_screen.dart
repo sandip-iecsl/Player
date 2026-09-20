@@ -206,7 +206,7 @@ class _SecretConfigurationScreenState extends State<SecretConfigurationScreen> {
                           color: const Color(0xFF1A1A1A),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                              color: AppColors.neonPink.withOpacity(0.2)),
+                              color: AppColors.neonPink.withValues(alpha: 0.2)),
                         ),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -300,12 +300,12 @@ class _SecretConfigurationScreenState extends State<SecretConfigurationScreen> {
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.neonPink,
                             disabledBackgroundColor:
-                                AppColors.neonPink.withOpacity(0.5),
+                                AppColors.neonPink.withValues(alpha: 0.5),
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12),
                             ),
                             elevation: 4,
-                            shadowColor: AppColors.neonPink.withOpacity(0.4),
+                            shadowColor: AppColors.neonPink.withValues(alpha: 0.4),
                           ),
                           child: _isSaving
                               ? const SizedBox(
@@ -376,7 +376,7 @@ class _SecretConfigurationScreenState extends State<SecretConfigurationScreen> {
           subtitle: Text(subtitle,
               style: const TextStyle(color: Colors.grey, fontSize: 12)),
           value: value,
-          activeColor: AppColors.neonPink,
+          activeThumbColor: AppColors.neonPink,
           onChanged: onChanged,
         ),
       );

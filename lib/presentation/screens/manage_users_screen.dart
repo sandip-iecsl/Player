@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
 import '../../core/constants/app_colors.dart';
 import '../../data/services/local_chat_service.dart';
 import '../../features/admin/engines/user_management_engine.dart';
@@ -190,8 +189,8 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
               final deviceInfo = user['deviceInfo'] as String;
               final isMe = uid == _myDeviceId;
               final isOnline = status == 'online';
-              final lastActiveText = lastActive != null ? '${lastActive.toDate().toLocal().toString().split('.').first}' : 'Not available';
-              final createdText = createdAt != null ? '${createdAt.toDate().toLocal().toString().split('.').first}' : 'Not available';
+              final lastActiveText = lastActive != null ? lastActive.toDate().toLocal().toString().split('.').first : 'Not available';
+              final createdText = createdAt != null ? createdAt.toDate().toLocal().toString().split('.').first : 'Not available';
 
               return Card(
                 color: const Color(0xFF111111),
@@ -245,7 +244,7 @@ class _ManageUsersScreenState extends State<ManageUsersScreen> {
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                     decoration: BoxDecoration(
-                                      color: AppColors.neonPink.withOpacity(0.15),
+                                      color: AppColors.neonPink.withValues(alpha: 0.15),
                                       borderRadius: BorderRadius.circular(6),
                                     ),
                                     child: Text('Admin', style: TextStyle(color: AppColors.neonPink, fontSize: 11, fontWeight: FontWeight.bold)),

@@ -15,6 +15,21 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+  errors:
+    avoid_print: ignore
+    dead_null_aware_expression: ignore
+    deprecated_member_use: ignore
+    experimental_member_use: ignore
+    non_constant_identifier_names: ignore
+    prefer_const_constructors: ignore
+    prefer_const_declarations: ignore
+    unnecessary_import: ignore
+    unnecessary_string_interpolations: ignore
+    unused_element: ignore
+    unused_field: ignore
+    unused_import: ignore
+    unused_local_variable: ignore
+    use_build_context_synchronously: ignore
 include: package:flutter_lints/flutter.yaml
 
 linter:

@@ -1,6 +1,4 @@
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
 
 class SearchEnhancer {
   /// Synchronizes all ML Engine mappings from Firestore to the local Hive box silently

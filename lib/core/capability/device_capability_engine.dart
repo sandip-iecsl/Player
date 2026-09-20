@@ -6,7 +6,7 @@ class DeviceCapabilityEngine implements IEngine {
   factory DeviceCapabilityEngine() => _instance;
   DeviceCapabilityEngine._internal();
 
-  int _ramCapacityMb = 3000; // Simulated mid-tier default if device info fails
+  final int _ramCapacityMb = 3000; // Simulated mid-tier default if device info fails
   bool _isLowMemoryDevice = false;
 
   @override

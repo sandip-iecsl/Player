@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../models/search_models.dart';
 import '../providers/provider_health.dart';
 
 /// Circuit breaker helper wrapping provider operations

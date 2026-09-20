@@ -197,7 +197,7 @@ class _MusicPlayerWithVisualizerState extends State<MusicPlayerWithVisualizer>
                       shape: BoxShape.circle,
                       color: _autoColor
                           ? Colors.white10
-                          : _selectedColor.withOpacity(0.3),
+                          : _selectedColor.withValues(alpha: 0.3),
                       border: Border.all(
                         color: _autoColor ? Colors.white30 : _selectedColor,
                       ),
@@ -325,14 +325,14 @@ class _MusicPlayerWithVisualizerState extends State<MusicPlayerWithVisualizer>
                       gradient: LinearGradient(
                         colors: [
                           const Color(0xFF00FF41),
-                          const Color(0xFF00FF41).withOpacity(0.7),
+                          const Color(0xFF00FF41).withValues(alpha: 0.7),
                         ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF00FF41).withOpacity(0.5),
+                          color: const Color(0xFF00FF41).withValues(alpha: 0.5),
                           blurRadius: 20,
                           spreadRadius: 0,
                         ),

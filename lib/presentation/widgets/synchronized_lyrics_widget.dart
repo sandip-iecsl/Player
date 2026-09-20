@@ -118,7 +118,7 @@ class _SynchronizedLyricsWidgetState extends State<SynchronizedLyricsWidget> {
               style: TextStyle(
                 color: isActive 
                     ? AppColors.neonPink // Central Style Dynamic Accent
-                    : (isPast ? AppColors.textSecondary.withOpacity(0.5) : AppColors.textPrimary),
+                    : (isPast ? AppColors.textSecondary.withValues(alpha: 0.5) : AppColors.textPrimary),
                 fontSize: isActive ? 24 : 18,
                 fontWeight: isActive ? FontWeight.bold : FontWeight.w500,
                 height: 1.4,

@@ -22,39 +22,39 @@ void main() {
     test('Exact match boosting prioritizes exact song title over popular compilations', () {
       final query = intelligence.parse('tum hi ho');
 
-      final officialSong = SearchCandidate(
+      const officialSong = SearchCandidate(
         canonicalId: '1',
         title: 'Tum Hi Ho',
         artist: 'Arijit Singh',
         normalizedTitle: 'tum hi ho',
         normalizedArtist: 'arijit singh',
-        duration: const Duration(seconds: 262),
+        duration: Duration(seconds: 262),
         versionType: TrackVersionType.official,
         sourceProvider: SearchProviderType.jiosaavn,
         viewCount: 500000,
         popularityScore: 0.6,
       );
 
-      final popularCompilation = SearchCandidate(
+      const popularCompilation = SearchCandidate(
         canonicalId: '2',
         title: 'Top Bollywood Romantic Songs Jukebox',
         artist: 'Various Artists',
         normalizedTitle: 'top bollywood romantic songs jukebox',
         normalizedArtist: 'various artists',
-        duration: const Duration(seconds: 3600),
+        duration: Duration(seconds: 3600),
         versionType: TrackVersionType.compilation,
         sourceProvider: SearchProviderType.youtube,
         viewCount: 50000000,
         popularityScore: 0.99,
       );
 
-      final reactionVideo = SearchCandidate(
+      const reactionVideo = SearchCandidate(
         canonicalId: '3',
         title: 'Tum Hi Ho - American Reacts to Arijit Singh',
         artist: 'YouTuber Reactor',
         normalizedTitle: 'tum hi ho american reacts to arijit singh',
         normalizedArtist: 'youtuber reactor',
-        duration: const Duration(seconds: 600),
+        duration: Duration(seconds: 600),
         versionType: TrackVersionType.reaction,
         sourceProvider: SearchProviderType.youtube,
         viewCount: 2000000,
@@ -76,13 +76,13 @@ void main() {
     test('Score Boosts and Penalties remain within valid bounded range [0.0 - 1.0]', () {
       final query = intelligence.parse('tum hi ho live');
 
-      final liveCandidate = SearchCandidate(
+      const liveCandidate = SearchCandidate(
         canonicalId: '1',
         title: 'Tum Hi Ho Live',
         artist: 'Arijit Singh',
         normalizedTitle: 'tum hi ho live',
         normalizedArtist: 'arijit singh',
-        duration: const Duration(seconds: 300),
+        duration: Duration(seconds: 300),
         versionType: TrackVersionType.live,
         sourceProvider: SearchProviderType.youtube,
       );

@@ -112,7 +112,7 @@ class YouTubeSearchProvider implements SearchProviderClient {
                 'channel': item['channelTitle'],
                 'youtube_url': 'https://www.youtube.com/watch?v=$ytId',
               },
-              matchedProviders: [SearchProviderType.youtube],
+              matchedProviders: const [SearchProviderType.youtube],
             ));
           }
         }

@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
-import '../../../../domain/entities/song.dart';
 import '../autocomplete/autocomplete_engine.dart';
 import '../autocomplete/did_you_mean_engine.dart';
 import '../cache/search_cache.dart';

@@ -77,13 +77,13 @@ void main() {
             sourceProvider: SearchProviderType.youtube,
             popularityScore: 0.9,
           ),
-          SearchCandidate(
+          const SearchCandidate(
             canonicalId: 'candidate_unrelated',
             title: 'Unrelated Top Hit 2024',
             artist: 'Another Artist',
             normalizedTitle: 'unrelated top hit 2024',
             normalizedArtist: 'another artist',
-            duration: const Duration(seconds: 210),
+            duration: Duration(seconds: 210),
             sourceProvider: SearchProviderType.spotify,
             popularityScore: 0.95,
           ),

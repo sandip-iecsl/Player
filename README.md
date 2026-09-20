@@ -2,6 +2,12 @@
 
 > **Aura Player** (`free_play`) is an ad-free, offline-first music streaming, discovery, and secure peer-to-peer communication application built with Flutter, Riverpod, Just Audio, Hive, Node.js microservices, and a Decoupled Dual-Database Cloud Firestore architecture.
 
+## ✅ Current project status
+
+- Verified with `flutter analyze` on 2026-09-20: **No issues found**.
+- The terminal noise from legacy Dart lint output was reduced by applying the repo’s auto-fix set and aligning the analyzer config with the current Flutter toolchain.
+- The project is currently in a clean, analyzer-verified state for continued development and release work.
+
 ---
 
 ## 📑 Table of Contents

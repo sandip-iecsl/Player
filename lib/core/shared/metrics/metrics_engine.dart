@@ -77,7 +77,7 @@ class MetricsEngine implements IEngine {
       'startupTimeMs': _metrics['startup_ms'],
       'firestoreReads': _metrics['firestore_reads'],
       'firestoreWrites': _metrics['firestore_writes'],
-      'cacheHitRatio': ratio.toStringAsFixed(1) + '%',
+      'cacheHitRatio': '${ratio.toStringAsFixed(1)}%',
       'averageSearchLatencyMs': avgSearch.toStringAsFixed(0),
       'lastPlaybackStartupMs': _metrics['playback_start_ms'],
     };

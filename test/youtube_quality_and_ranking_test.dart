@@ -33,7 +33,7 @@ void main() {
     });
 
     test('YouTubeRelevanceRanker accurately ranks by Text, Velocity, Taste, and Trend', () {
-      final ranker = const YouTubeRelevanceRanker();
+      const ranker = YouTubeRelevanceRanker();
 
       final song1 = SongModel(
         id: '1',

@@ -3,7 +3,6 @@ import 'package:csv/csv.dart';
 import 'dart:convert';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:excel/excel.dart' hide Border;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -557,7 +556,7 @@ class _MLTrainingScreenState extends State<MLTrainingScreen> {
                     title: const Text('Show Contact (SMS) Option', style: TextStyle(color: Colors.white)),
                     subtitle: const Text('Toggle chat/SMS shortcut button on Home Screen', style: TextStyle(color: Colors.grey, fontSize: 12)),
                     value: _showContact,
-                    activeColor: const Color(0xFF1DB954),
+                    activeThumbColor: const Color(0xFF1DB954),
                     onChanged: (val) {
                       setStateLocal(() {
                         _showContact = val;
@@ -568,7 +567,7 @@ class _MLTrainingScreenState extends State<MLTrainingScreen> {
                     title: const Text('Show LinkedIn Option', style: TextStyle(color: Colors.white)),
                     subtitle: const Text('Toggle LinkedIn shortcut button on Home Screen', style: TextStyle(color: Colors.grey, fontSize: 12)),
                     value: _showLinkedin,
-                    activeColor: const Color(0xFF1DB954),
+                    activeThumbColor: const Color(0xFF1DB954),
                     onChanged: (val) {
                       setStateLocal(() {
                         _showLinkedin = val;

@@ -70,7 +70,7 @@ class SpotifySearchProvider implements SearchProviderClient {
             'artist_id': t.artistId,
             'album_id': t.albumId,
           },
-          matchedProviders: [SearchProviderType.spotify],
+          matchedProviders: const [SearchProviderType.spotify],
         );
       }).toList();
 

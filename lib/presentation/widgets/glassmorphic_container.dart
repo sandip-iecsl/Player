@@ -36,8 +36,8 @@ class GlassmorphicContainer extends StatelessWidget {
             borderRadius: borderRadius,
             border: Border.all(
               color: isDark
-                  ? Colors.white.withOpacity(0.2)
-                  : Colors.black.withOpacity(0.1),
+                  ? Colors.white.withValues(alpha: 0.2)
+                  : Colors.black.withValues(alpha: 0.1),
               width: 1.5,
             ),
           ),

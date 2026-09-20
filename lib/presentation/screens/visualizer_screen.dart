@@ -215,8 +215,8 @@ class _VisualizerScreenState extends ConsumerState<VisualizerScreen>
                       shape: BoxShape.circle,
                       gradient: RadialGradient(
                         colors: [
-                          _currentColor.withOpacity(0.25), // Increased opacity
-                          _currentColor.withOpacity(0.05),
+                          _currentColor.withValues(alpha: 0.25), // Increased opacity
+                          _currentColor.withValues(alpha: 0.05),
                           Colors.transparent,
                         ],
                         stops: const [
@@ -313,8 +313,8 @@ class _VisualizerScreenState extends ConsumerState<VisualizerScreen>
                                     height: 50,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: Colors.black.withOpacity(0.65),
-                                      border: Border.all(color: _currentColor.withOpacity(0.7), width: 1.5),
+                                      color: Colors.black.withValues(alpha: 0.65),
+                                      border: Border.all(color: _currentColor.withValues(alpha: 0.7), width: 1.5),
                                     ),
                                     child: const Icon(
                                       Icons.skip_previous_rounded,
@@ -341,12 +341,12 @@ class _VisualizerScreenState extends ConsumerState<VisualizerScreen>
                                     height: 70,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: Colors.black.withOpacity(0.65),
+                                      color: Colors.black.withValues(alpha: 0.65),
                                       border: Border.all(
                                           color: _currentColor, width: 2.5),
                                       boxShadow: [
                                         BoxShadow(
-                                            color: _currentColor.withOpacity(0.6),
+                                            color: _currentColor.withValues(alpha: 0.6),
                                             blurRadius: 20)
                                       ],
                                     ),
@@ -370,8 +370,8 @@ class _VisualizerScreenState extends ConsumerState<VisualizerScreen>
                                     height: 50,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: Colors.black.withOpacity(0.65),
-                                      border: Border.all(color: _currentColor.withOpacity(0.7), width: 1.5),
+                                      color: Colors.black.withValues(alpha: 0.65),
+                                      border: Border.all(color: _currentColor.withValues(alpha: 0.7), width: 1.5),
                                     ),
                                     child: const Icon(
                                       Icons.skip_next_rounded,
@@ -396,7 +396,7 @@ class _VisualizerScreenState extends ConsumerState<VisualizerScreen>
                               padding: const EdgeInsets.symmetric(
                                   vertical: 14, horizontal: 10),
                               decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.65),
+                                color: Colors.black.withValues(alpha: 0.65),
                                 borderRadius: BorderRadius.circular(22),
                                 border: Border.all(color: Colors.white10),
                                 boxShadow: const [
@@ -624,12 +624,12 @@ class _VisualizerScreenState extends ConsumerState<VisualizerScreen>
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
                   colors: [
-                    const Color(0xFF1A1A1A).withOpacity(0.95),
-                    const Color(0xFF0A0A0A).withOpacity(0.98),
+                    const Color(0xFF1A1A1A).withValues(alpha: 0.95),
+                    const Color(0xFF0A0A0A).withValues(alpha: 0.98),
                   ],
                 ),
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
-                border: Border.all(color: _currentColor.withOpacity(0.3), width: 1),
+                border: Border.all(color: _currentColor.withValues(alpha: 0.3), width: 1),
               ),
               child: SingleChildScrollView(
                 child: Padding(
@@ -642,7 +642,7 @@ class _VisualizerScreenState extends ConsumerState<VisualizerScreen>
                         width: 40,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.3),
+                          color: Colors.white.withValues(alpha: 0.3),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -657,7 +657,7 @@ class _VisualizerScreenState extends ConsumerState<VisualizerScreen>
                           fontWeight: FontWeight.bold,
                           shadows: [
                             Shadow(
-                              color: _currentColor.withOpacity(0.5),
+                              color: _currentColor.withValues(alpha: 0.5),
                               blurRadius: 8,
                             ),
                           ],
@@ -699,7 +699,7 @@ class _VisualizerScreenState extends ConsumerState<VisualizerScreen>
                                       ),
                                       boxShadow: [
                                         BoxShadow(
-                                          color: color.withOpacity(0.6),
+                                          color: color.withValues(alpha: 0.6),
                                           blurRadius: isSelected ? 15 : 8,
                                           spreadRadius: isSelected ? 2 : 0,
                                         ),

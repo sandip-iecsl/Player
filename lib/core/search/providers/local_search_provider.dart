@@ -121,7 +121,7 @@ class LocalSearchProvider implements SearchProviderClient {
             playableUrl: song.previewUrl,
             previewUrl: song.previewUrl,
             isDownloadable: true,
-            matchedProviders: [SearchProviderType.local],
+            matchedProviders: const [SearchProviderType.local],
           ));
         }
       }

@@ -597,7 +597,7 @@ class _SecretConsoleScreenState extends State<SecretConsoleScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF25D366).withOpacity(0.15),
+                          color: const Color(0xFF25D366).withValues(alpha: 0.15),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: const Text(
@@ -1064,7 +1064,7 @@ class _NewMessageSheetState extends State<_NewMessageSheet> {
                     padding: const EdgeInsets.symmetric(
                         horizontal: 5, vertical: 2),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF25D366).withOpacity(0.15),
+                      color: const Color(0xFF25D366).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: const Text(

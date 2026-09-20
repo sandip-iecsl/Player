@@ -181,7 +181,7 @@ class _EnhancedNotificationControllerState extends ConsumerState<EnhancedNotific
   }
 
   Widget _buildModifiedCard(BuildContext context, bool isPlaying, dynamic audioService) {
-    final glowColor = _dominantColor.withOpacity(0.4 + _beatIntensity * 0.3);
+    final glowColor = _dominantColor.withValues(alpha: 0.4 + _beatIntensity * 0.3);
     
     return Container(
       margin: widget.isCompact 
@@ -192,14 +192,14 @@ class _EnhancedNotificationControllerState extends ConsumerState<EnhancedNotific
         borderRadius: BorderRadius.circular(20),
         boxShadow: widget.isCompact ? [
           BoxShadow(
-            color: glowColor.withOpacity(0.25),
+            color: glowColor.withValues(alpha: 0.25),
             blurRadius: 12,
             spreadRadius: 0,
             offset: const Offset(0, 2),
           ),
         ] : [
           BoxShadow(
-            color: glowColor.withOpacity(0.3),
+            color: glowColor.withValues(alpha: 0.3),
             blurRadius: 20 + _beatIntensity * 15,
             spreadRadius: 1 + _beatIntensity * 5,
           ),
@@ -215,9 +215,9 @@ class _EnhancedNotificationControllerState extends ConsumerState<EnhancedNotific
                 filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
                 child: Container(
                   decoration: BoxDecoration(
-                    color: Colors.black.withOpacity(0.55),
+                    color: Colors.black.withValues(alpha: 0.55),
                     border: Border.all(
-                      color: Colors.white.withOpacity(0.12),
+                      color: Colors.white.withValues(alpha: 0.12),
                       width: 1,
                     ),
                   ),
@@ -291,7 +291,7 @@ class _EnhancedNotificationControllerState extends ConsumerState<EnhancedNotific
       right: 0,
       child: Container(
         height: 2,
-        color: Colors.white.withOpacity(0.1),
+        color: Colors.white.withValues(alpha: 0.1),
         child: FractionallySizedBox(
           alignment: Alignment.centerLeft,
           widthFactor: progress.clamp(0.0, 1.0),
@@ -352,7 +352,7 @@ class _EnhancedNotificationControllerState extends ConsumerState<EnhancedNotific
                 Text(
                   widget.currentSong!.artist,
                   style: TextStyle(
-                    color: Colors.white.withOpacity(0.65),
+                    color: Colors.white.withValues(alpha: 0.65),
                     fontSize: 11,
                   ),
                   maxLines: 1,
@@ -389,7 +389,7 @@ class _EnhancedNotificationControllerState extends ConsumerState<EnhancedNotific
                 color: _dominantColor,
                 boxShadow: [
                   BoxShadow(
-                    color: _dominantColor.withOpacity(0.5),
+                    color: _dominantColor.withValues(alpha: 0.5),
                     blurRadius: 10,
                     spreadRadius: 1,
                   ),
@@ -431,7 +431,7 @@ class _EnhancedNotificationControllerState extends ConsumerState<EnhancedNotific
                   Text(
                     widget.currentSong!.artist,
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
+                      color: Colors.white.withValues(alpha: 0.8),
                       fontSize: 15,
                     ),
                   ),
@@ -461,7 +461,7 @@ class _EnhancedNotificationControllerState extends ConsumerState<EnhancedNotific
         borderRadius: BorderRadius.circular(12),
         boxShadow: [
           BoxShadow(
-            color: _dominantColor.withOpacity(0.4),
+            color: _dominantColor.withValues(alpha: 0.4),
             blurRadius: 10,
             spreadRadius: 2,
           ),
@@ -486,11 +486,11 @@ class _EnhancedNotificationControllerState extends ConsumerState<EnhancedNotific
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           gradient: LinearGradient(
-            colors: [_dominantColor, _dominantColor.withOpacity(0.7)],
+            colors: [_dominantColor, _dominantColor.withValues(alpha: 0.7)],
           ),
           boxShadow: [
             BoxShadow(
-              color: _dominantColor.withOpacity(0.5),
+              color: _dominantColor.withValues(alpha: 0.5),
               blurRadius: 15,
               spreadRadius: 2,
             ),
@@ -550,9 +550,9 @@ class NeonBorderPainter extends CustomPainter {
       ..shader = ui.Gradient.sweep(
         size.center(Offset.zero),
         [
-          color.withOpacity(0.1),
+          color.withValues(alpha: 0.1),
           color,
-          color.withOpacity(0.1),
+          color.withValues(alpha: 0.1),
         ],
         [0.0, 0.5, 1.0],
         TileMode.clamp,

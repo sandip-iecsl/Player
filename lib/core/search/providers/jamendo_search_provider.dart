@@ -112,7 +112,7 @@ class JamendoSearchProvider implements SearchProviderClient {
                 'license': license,
                 'share_url': item['shareurl'],
               },
-              matchedProviders: [SearchProviderType.jamendo],
+              matchedProviders: const [SearchProviderType.jamendo],
             ));
           }
         }

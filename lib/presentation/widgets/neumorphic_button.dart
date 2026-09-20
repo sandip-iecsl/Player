@@ -29,7 +29,7 @@ class _NeumorphicButtonState extends State<NeumorphicButton> {
         isDark ? AppColors.deepSpaceBlackLight : AppColors.cloudWhiteLight;
     final shadowColor = isDark ? Colors.black : Colors.grey.shade300;
     final highlightColor =
-        isDark ? Colors.white.withOpacity(0.1) : Colors.black.withOpacity(0.05);
+        isDark ? Colors.white.withValues(alpha: 0.1) : Colors.black.withValues(alpha: 0.05);
 
     return GestureDetector(
       onTapDown: (_) => setState(() => _isPressed = true),
@@ -47,14 +47,14 @@ class _NeumorphicButtonState extends State<NeumorphicButton> {
           boxShadow: _isPressed
               ? [
                   BoxShadow(
-                    color: shadowColor.withOpacity(0.3),
+                    color: shadowColor.withValues(alpha: 0.3),
                     blurRadius: 4,
                     offset: const Offset(2, 2),
                   ),
                 ]
               : [
                   BoxShadow(
-                    color: shadowColor.withOpacity(0.5),
+                    color: shadowColor.withValues(alpha: 0.5),
                     blurRadius: 12,
                     offset: const Offset(4, 4),
                   ),

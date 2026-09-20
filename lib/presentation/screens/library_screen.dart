@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/playlist_provider.dart';
 import '../providers/connectivity_provider.dart';
 import 'playlist_screen.dart';
@@ -349,10 +347,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   decoration: InputDecoration(
                     hintText: 'Passcode',
                     hintStyle: TextStyle(
-                        color: AppColors.textSecondary.withOpacity(0.4)),
+                        color: AppColors.textSecondary.withValues(alpha: 0.4)),
                     enabledBorder: UnderlineInputBorder(
                       borderSide: BorderSide(
-                          color: AppColors.textSecondary.withOpacity(0.5)),
+                          color: AppColors.textSecondary.withValues(alpha: 0.5)),
                     ),
                     focusedBorder: UnderlineInputBorder(
                       borderSide: BorderSide(color: AppColors.neonPink),

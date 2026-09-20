@@ -131,9 +131,9 @@ class EqualizerPainter extends CustomPainter {
       begin: Alignment.topCenter,
       end: Alignment.bottomCenter,
       colors: [
-        Colors.black.withOpacity(0.5),
+        Colors.black.withValues(alpha: 0.5),
         Colors.black,
-        Colors.black.withOpacity(0.5),
+        Colors.black.withValues(alpha: 0.5),
       ],
     );
 
@@ -225,7 +225,7 @@ class EqualizerPainter extends CustomPainter {
 
     // Draw glowing neon effect (2 passes: blur + sharp)
     final glowPaint = Paint()
-      ..color = color.withOpacity(opacity * 0.4)
+      ..color = color.withValues(alpha: opacity * 0.4)
       ..strokeWidth = 6.0
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
@@ -236,7 +236,7 @@ class EqualizerPainter extends CustomPainter {
 
     // Draw textured wave stroke with dotted pattern effect
     final mainPaint = Paint()
-      ..color = color.withOpacity(opacity * 0.9)
+      ..color = color.withValues(alpha: opacity * 0.9)
       ..strokeWidth = 2.5
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
@@ -260,7 +260,7 @@ class EqualizerPainter extends CustomPainter {
     }
 
     final highlightPaint = Paint()
-      ..color = Colors.white.withOpacity(opacity * 0.3)
+      ..color = Colors.white.withValues(alpha: opacity * 0.3)
       ..strokeWidth = 1.2
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round;

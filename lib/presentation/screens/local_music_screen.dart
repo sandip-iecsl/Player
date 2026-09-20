@@ -9,7 +9,6 @@ import '../widgets/playlist_dialogs.dart';
 import '../../core/constants/app_colors.dart';
 
 import '../providers/theme_provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'secret_configuration_screen.dart';
 import '../../features/admin/engines/security_engine.dart';
@@ -32,7 +31,7 @@ class LocalMusicScreen extends ConsumerWidget {
           child: Container(
             alignment: Alignment.topLeft,
             padding: const EdgeInsets.all(4),
-            child: Icon(Icons.circle, size: 12, color: Colors.white.withOpacity(0.02)),
+            child: Icon(Icons.circle, size: 12, color: Colors.white.withValues(alpha: 0.02)),
           ),
         ),
         title: Text('Local Music',
@@ -125,10 +124,10 @@ class _FolderView extends ConsumerWidget {
           ? Center(
               child: Column(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.music_off_rounded, color: AppColors.textSecondary, size: 64),
-                SizedBox(height: 16),
+                const SizedBox(height: 16),
                 Text('No music found on device',
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 16)),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 Text('Add MP3/FLAC files to your Music folder',
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
               ]),
@@ -293,7 +292,7 @@ class _FolderSongsScreen extends ConsumerWidget {
                   height: 48,
                   decoration: BoxDecoration(
                       color: playing
-                          ? AppColors.neonPink.withOpacity(0.2)
+                          ? AppColors.neonPink.withValues(alpha: 0.2)
                           : AppColors.deepSpaceBlackLighter,
                       borderRadius: BorderRadius.circular(6)),
                   child: Icon(
@@ -358,7 +357,7 @@ void _showSecretPasswordDialog(BuildContext context) {
             decoration: InputDecoration(
               hintText: 'Passcode',
               hintStyle:
-                  TextStyle(color: AppColors.textSecondary.withOpacity(0.4)),
+                  TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.4)),
               focusedBorder: UnderlineInputBorder(
                   borderSide: BorderSide(color: AppColors.neonPink)),
             ),

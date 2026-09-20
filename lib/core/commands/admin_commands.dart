@@ -3,20 +3,14 @@ import 'app_command.dart';
 
 class UpdateSettingsCommand extends AppCommand {
   UpdateSettingsCommand({
-    required String commandId,
-    required DateTime timestamp,
-    int retryCount = 0,
-    CommandPriority priority = CommandPriority.medium,
-    CommandStatus status = CommandStatus.pending,
-    required Map<String, dynamic> payload,
+    required super.commandId,
+    required super.timestamp,
+    super.retryCount,
+    super.priority = CommandPriority.medium,
+    super.status,
+    required super.payload,
   }) : super(
-          commandId: commandId,
-          timestamp: timestamp,
-          retryCount: retryCount,
-          priority: priority,
-          status: status,
           type: 'UpdateSettingsCommand',
-          payload: payload,
         );
 
   @override
@@ -37,20 +31,14 @@ class UpdateSettingsCommand extends AppCommand {
 
 class TrainSearchRuleCommand extends AppCommand {
   TrainSearchRuleCommand({
-    required String commandId,
-    required DateTime timestamp,
-    int retryCount = 0,
-    CommandPriority priority = CommandPriority.medium,
-    CommandStatus status = CommandStatus.pending,
-    required Map<String, dynamic> payload,
+    required super.commandId,
+    required super.timestamp,
+    super.retryCount,
+    super.priority = CommandPriority.medium,
+    super.status,
+    required super.payload,
   }) : super(
-          commandId: commandId,
-          timestamp: timestamp,
-          retryCount: retryCount,
-          priority: priority,
-          status: status,
           type: 'TrainSearchRuleCommand',
-          payload: payload,
         );
 
   @override
@@ -82,20 +70,14 @@ class TrainSearchRuleCommand extends AppCommand {
 
 class DeleteUserCommand extends AppCommand {
   DeleteUserCommand({
-    required String commandId,
-    required DateTime timestamp,
-    int retryCount = 0,
-    CommandPriority priority = CommandPriority.critical,
-    CommandStatus status = CommandStatus.pending,
-    required Map<String, dynamic> payload,
+    required super.commandId,
+    required super.timestamp,
+    super.retryCount,
+    super.priority = CommandPriority.critical,
+    super.status,
+    required super.payload,
   }) : super(
-          commandId: commandId,
-          timestamp: timestamp,
-          retryCount: retryCount,
-          priority: priority,
-          status: status,
           type: 'DeleteUserCommand',
-          payload: payload,
         );
 
   @override
@@ -146,20 +128,14 @@ class DeleteUserCommand extends AppCommand {
 
 class ExportUsersCommand extends AppCommand {
   ExportUsersCommand({
-    required String commandId,
-    required DateTime timestamp,
-    int retryCount = 0,
-    CommandPriority priority = CommandPriority.low,
-    CommandStatus status = CommandStatus.pending,
-    required Map<String, dynamic> payload,
+    required super.commandId,
+    required super.timestamp,
+    super.retryCount,
+    super.priority = CommandPriority.low,
+    super.status,
+    required super.payload,
   }) : super(
-          commandId: commandId,
-          timestamp: timestamp,
-          retryCount: retryCount,
-          priority: priority,
-          status: status,
           type: 'ExportUsersCommand',
-          payload: payload,
         );
 
   @override
@@ -171,20 +147,14 @@ class ExportUsersCommand extends AppCommand {
 
 class ImportSearchRulesCommand extends AppCommand {
   ImportSearchRulesCommand({
-    required String commandId,
-    required DateTime timestamp,
-    int retryCount = 0,
-    CommandPriority priority = CommandPriority.medium,
-    CommandStatus status = CommandStatus.pending,
-    required Map<String, dynamic> payload,
+    required super.commandId,
+    required super.timestamp,
+    super.retryCount,
+    super.priority = CommandPriority.medium,
+    super.status,
+    required super.payload,
   }) : super(
-          commandId: commandId,
-          timestamp: timestamp,
-          retryCount: retryCount,
-          priority: priority,
-          status: status,
           type: 'ImportSearchRulesCommand',
-          payload: payload,
         );
 
   @override
@@ -212,20 +182,14 @@ class ImportSearchRulesCommand extends AppCommand {
 
 class CreateAuditLogCommand extends AppCommand {
   CreateAuditLogCommand({
-    required String commandId,
-    required DateTime timestamp,
-    int retryCount = 0,
-    CommandPriority priority = CommandPriority.low,
-    CommandStatus status = CommandStatus.pending,
-    required Map<String, dynamic> payload,
+    required super.commandId,
+    required super.timestamp,
+    super.retryCount,
+    super.priority = CommandPriority.low,
+    super.status,
+    required super.payload,
   }) : super(
-          commandId: commandId,
-          timestamp: timestamp,
-          retryCount: retryCount,
-          priority: priority,
-          status: status,
           type: 'CreateAuditLogCommand',
-          payload: payload,
         );
 
   @override

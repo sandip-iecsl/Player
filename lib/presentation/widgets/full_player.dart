@@ -161,7 +161,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                       child: BackdropFilter(
                         filter: ImageFilter.blur(sigmaX: 40.0, sigmaY: 40.0),
                         child: Container(
-                          color: Colors.black.withOpacity(0.45),
+                          color: Colors.black.withValues(alpha: 0.45),
                         ),
                       ),
                     ),
@@ -173,8 +173,8 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                             end: Alignment.bottomCenter,
                             colors: [
                               (_backgroundColor ?? AppColors.deepSpaceBlack)
-                                  .withOpacity(0.35),
-                              AppColors.deepSpaceBlack.withOpacity(0.92),
+                                  .withValues(alpha: 0.35),
+                              AppColors.deepSpaceBlack.withValues(alpha: 0.92),
                             ],
                           ),
                         ),
@@ -587,7 +587,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                                             shadows: [
                                               Shadow(
                                                 color: AppColors.neonPink
-                                                    .withOpacity(0.55),
+                                                    .withValues(alpha: 0.55),
                                                 offset: const Offset(0, 0),
                                                 blurRadius: 10,
                                               ),
@@ -670,15 +670,15 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                                         horizontal: 10, vertical: 4),
                                     decoration: BoxDecoration(
                                       color: specs.isBitPerfectActive
-                                          ? Colors.amber.withOpacity(0.15)
+                                          ? Colors.amber.withValues(alpha: 0.15)
                                           : AppColors.neonPink
-                                              .withOpacity(0.15),
+                                              .withValues(alpha: 0.15),
                                       borderRadius: BorderRadius.circular(12),
                                       border: Border.all(
                                         color: specs.isBitPerfectActive
-                                            ? Colors.amber.withOpacity(0.6)
+                                            ? Colors.amber.withValues(alpha: 0.6)
                                             : AppColors.neonPink
-                                                .withOpacity(0.4),
+                                                .withValues(alpha: 0.4),
                                         width: 1,
                                       ),
                                     ),
@@ -725,7 +725,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                                   specs.codec,
                                   style: TextStyle(
                                     color: AppColors.textSecondary
-                                        .withOpacity(0.8),
+                                        .withValues(alpha: 0.8),
                                     fontSize: 11,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -751,10 +751,10 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                                     overlayRadius: 14),
                                 activeTrackColor: AppColors.neonPink,
                                 inactiveTrackColor:
-                                    AppColors.divider.withOpacity(0.3),
+                                    AppColors.divider.withValues(alpha: 0.3),
                                 thumbColor: AppColors.neonPink,
                                 overlayColor:
-                                    AppColors.neonPink.withOpacity(0.12),
+                                    AppColors.neonPink.withValues(alpha: 0.12),
                               ),
                               child: Slider(
                                 value: _dragValue ?? safeValue,
@@ -936,7 +936,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                                     .deepSpaceBlackLight, // Dark theme background
                                 borderRadius: BorderRadius.circular(12),
                                 border: Border.all(
-                                  color: AppColors.neonPink.withOpacity(0.15),
+                                  color: AppColors.neonPink.withValues(alpha: 0.15),
                                   width: 1,
                                 ),
                               ),
@@ -1379,7 +1379,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                           padding: const EdgeInsets.all(16),
                           margin: const EdgeInsets.symmetric(horizontal: 20),
                           decoration: BoxDecoration(
-                            color: AppColors.neonPink.withOpacity(0.1),
+                            color: AppColors.neonPink.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(color: AppColors.neonPink),
                           ),
@@ -1450,7 +1450,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                         ),
                         const SizedBox(height: 24),
                         Divider(
-                            color: AppColors.divider.withOpacity(0.15),
+                            color: AppColors.divider.withValues(alpha: 0.15),
                             indent: 40,
                             endIndent: 40),
                         const SizedBox(height: 16),
@@ -1473,11 +1473,11 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                                     hintText: 'Minutes',
                                     hintStyle: TextStyle(
                                         color: AppColors.textSecondary
-                                            .withOpacity(0.4)),
+                                            .withValues(alpha: 0.4)),
                                     enabledBorder: UnderlineInputBorder(
                                       borderSide: BorderSide(
                                           color: AppColors.textSecondary
-                                              .withOpacity(0.5)),
+                                              .withValues(alpha: 0.5)),
                                     ),
                                     focusedBorder: UnderlineInputBorder(
                                       borderSide:
@@ -1696,10 +1696,10 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                                         overlayRadius: 16),
                                     activeTrackColor: AppColors.neonPink,
                                     inactiveTrackColor:
-                                        AppColors.divider.withOpacity(0.3),
+                                        AppColors.divider.withValues(alpha: 0.3),
                                     thumbColor: AppColors.neonPink,
                                     overlayColor:
-                                        AppColors.neonPink.withOpacity(0.2),
+                                        AppColors.neonPink.withValues(alpha: 0.2),
                                   ),
                                   child: Slider(
                                     value: volume,
@@ -2138,10 +2138,10 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(28)),
                 border:
-                    Border.all(color: Colors.white.withOpacity(0.12), width: 1),
+                    Border.all(color: Colors.white.withValues(alpha: 0.12), width: 1),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.6),
+                    color: Colors.black.withValues(alpha: 0.6),
                     blurRadius: 30,
                     offset: const Offset(0, -10),
                   ),
@@ -2157,7 +2157,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                         width: 44,
                         height: 4,
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.25),
+                          color: Colors.white.withValues(alpha: 0.25),
                           borderRadius: BorderRadius.circular(2),
                         ),
                       ),
@@ -2170,8 +2170,8 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                           padding: const EdgeInsets.all(10),
                           decoration: BoxDecoration(
                             color: liveSpecs.isBitPerfectActive
-                                ? Colors.amber.withOpacity(0.2)
-                                : AppColors.neonPink.withOpacity(0.15),
+                                ? Colors.amber.withValues(alpha: 0.2)
+                                : AppColors.neonPink.withValues(alpha: 0.15),
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
@@ -2222,7 +2222,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                           Switch.adaptive(
                             value: liveSpecs.isBitPerfectActive,
                             activeColor: Colors.amber,
-                            activeTrackColor: Colors.amber.withOpacity(0.4),
+                            activeTrackColor: Colors.amber.withValues(alpha: 0.4),
                             onChanged: liveSpecs.isSupported
                                 ? (val) async {
                                     setModalState(
@@ -2260,8 +2260,8 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: liveSpecs.isBitPerfectActive
-                              ? Colors.amber.withOpacity(0.4)
-                              : Colors.white.withOpacity(0.08),
+                              ? Colors.amber.withValues(alpha: 0.4)
+                              : Colors.white.withValues(alpha: 0.08),
                         ),
                       ),
                       child: Column(
@@ -2295,7 +2295,7 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
                     Text(
                       'Bit-Perfect mode routes raw PCM streams directly to the Hardware Abstraction Layer (HAL), completely eliminating Android OS resamplers, volume scaling, and software DSP for audiophile-grade fidelity.',
                       style: TextStyle(
-                        color: AppColors.textSecondary.withOpacity(0.85),
+                        color: AppColors.textSecondary.withValues(alpha: 0.85),
                         fontSize: 11.5,
                         height: 1.45,
                       ),
@@ -2379,7 +2379,7 @@ class GlowingRoundSliderThumbShape extends RoundSliderThumbShape {
 
     // Draw the glow shadow under the thumb
     final Paint shadowPaint = Paint()
-      ..color = glowColor.withOpacity(0.4)
+      ..color = glowColor.withValues(alpha: 0.4)
       ..maskFilter = MaskFilter.blur(BlurStyle.normal, glowRadius);
     canvas.drawCircle(center, enabledThumbRadius + 3, shadowPaint);
 

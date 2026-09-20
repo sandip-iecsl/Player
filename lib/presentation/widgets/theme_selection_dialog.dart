@@ -33,10 +33,10 @@ class ThemeSelectionDialog extends ConsumerWidget {
       decoration: BoxDecoration(
         color: AppColors.deepSpaceBlackLight,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: Border.all(color: AppColors.neonPink.withOpacity(0.15), width: 1.5),
+        border: Border.all(color: AppColors.neonPink.withValues(alpha: 0.15), width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: AppColors.neonPink.withOpacity(0.1),
+            color: AppColors.neonPink.withValues(alpha: 0.1),
             blurRadius: 20,
             spreadRadius: 5,
           )
@@ -52,7 +52,7 @@ class ThemeSelectionDialog extends ConsumerWidget {
               width: 48,
               height: 4.5,
               decoration: BoxDecoration(
-                color: AppColors.textSecondary.withOpacity(0.4),
+                color: AppColors.textSecondary.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
@@ -91,7 +91,7 @@ class ThemeSelectionDialog extends ConsumerWidget {
               Switch(
                 value: isDark,
                 activeThumbColor: AppColors.neonPink,
-                activeTrackColor: AppColors.neonPink.withOpacity(0.3),
+                activeTrackColor: AppColors.neonPink.withValues(alpha: 0.3),
                 inactiveThumbColor: AppColors.textSecondary,
                 inactiveTrackColor: AppColors.deepSpaceBlackLighter,
                 onChanged: (_) {
@@ -103,7 +103,7 @@ class ThemeSelectionDialog extends ConsumerWidget {
           const SizedBox(height: 24),
           
           // Divider
-          Divider(color: AppColors.divider.withOpacity(0.2), height: 1),
+          Divider(color: AppColors.divider.withValues(alpha: 0.2), height: 1),
           const SizedBox(height: 24),
           
           // Accent Color Heading
@@ -156,7 +156,7 @@ class ThemeSelectionDialog extends ConsumerWidget {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: color1.withOpacity(isSelected ? 0.5 : 0.2),
+                                color: color1.withValues(alpha: isSelected ? 0.5 : 0.2),
                                 blurRadius: isSelected ? 12 : 6,
                                 spreadRadius: isSelected ? 1 : 0,
                                 offset: const Offset(0, 3),

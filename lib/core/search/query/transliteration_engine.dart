@@ -80,13 +80,13 @@ class TransliterationEngine {
       _devanagariMap.forEach((hindi, latin) {
         if (latin == lower || lower.contains(latin)) {
           variants.add(hindi);
-          if (lang == null) lang = 'hi';
+          lang ??= 'hi';
         }
       });
       _bengaliMap.forEach((bengali, latin) {
         if (latin == lower || lower.contains(latin)) {
           variants.add(bengali);
-          if (lang == null) lang = 'bn';
+          lang ??= 'bn';
         }
       });
     }

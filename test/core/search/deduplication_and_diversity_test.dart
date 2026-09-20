@@ -10,30 +10,30 @@ void main() {
     final intelligence = QueryIntelligence();
 
     test('Canonical resolver merges identical tracks across YouTube, JioSaavn, and Spotify', () {
-      final ytCandidate = SearchCandidate(
+      const ytCandidate = SearchCandidate(
         canonicalId: 'yt_123',
         youtubeId: '12345678901',
         title: 'Tum Hi Ho',
         artist: 'Arijit Singh',
         normalizedTitle: 'tum hi ho',
         normalizedArtist: 'arijit singh',
-        duration: const Duration(seconds: 262),
+        duration: Duration(seconds: 262),
         sourceProvider: SearchProviderType.youtube,
       );
 
-      final saavnCandidate = SearchCandidate(
+      const saavnCandidate = SearchCandidate(
         canonicalId: 'saavn_456',
         jioSaavnId: 'saavn_456',
         title: 'Tum Hi Ho',
         artist: 'Arijit Singh',
         normalizedTitle: 'tum hi ho',
         normalizedArtist: 'arijit singh',
-        duration: const Duration(seconds: 264),
+        duration: Duration(seconds: 264),
         sourceProvider: SearchProviderType.jiosaavn,
         playableUrl: 'https://saavn.com/stream/456.mp3',
       );
 
-      final spotifyCandidate = SearchCandidate(
+      const spotifyCandidate = SearchCandidate(
         canonicalId: 'spotify_789',
         spotifyId: 'spotify_789',
         isrc: 'INUM71300001',
@@ -41,7 +41,7 @@ void main() {
         artist: 'Arijit Singh',
         normalizedTitle: 'tum hi ho',
         normalizedArtist: 'arijit singh',
-        duration: const Duration(seconds: 262),
+        duration: Duration(seconds: 262),
         sourceProvider: SearchProviderType.spotify,
       );
 
@@ -60,23 +60,23 @@ void main() {
     });
 
     test('Canonical resolver does NOT merge different songs with identical titles by different artists', () {
-      final edSheeran = SearchCandidate(
+      const edSheeran = SearchCandidate(
         canonicalId: 'ed_1',
         title: 'Perfect',
         artist: 'Ed Sheeran',
         normalizedTitle: 'perfect',
         normalizedArtist: 'ed sheeran',
-        duration: const Duration(seconds: 263),
+        duration: Duration(seconds: 263),
         sourceProvider: SearchProviderType.spotify,
       );
 
-      final simplePlan = SearchCandidate(
+      const simplePlan = SearchCandidate(
         canonicalId: 'sp_1',
         title: 'Perfect',
         artist: 'Simple Plan',
         normalizedTitle: 'perfect',
         normalizedArtist: 'simple plan',
-        duration: const Duration(seconds: 278),
+        duration: Duration(seconds: 278),
         sourceProvider: SearchProviderType.spotify,
       );
 

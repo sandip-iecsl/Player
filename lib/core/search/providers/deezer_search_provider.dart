@@ -106,7 +106,7 @@ class DeezerSearchProvider implements SearchProviderClient {
                 'link': item['link'],
                 'explicit_lyrics': item['explicit_lyrics'],
               },
-              matchedProviders: [SearchProviderType.deezer],
+              matchedProviders: const [SearchProviderType.deezer],
             ));
           }
         }

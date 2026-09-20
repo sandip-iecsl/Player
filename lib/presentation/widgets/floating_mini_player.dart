@@ -109,13 +109,13 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
                 borderRadius: BorderRadius.circular(22),
                 boxShadow: [
                   BoxShadow(
-                    color: _accent.withOpacity(0.35),
+                    color: _accent.withValues(alpha: 0.35),
                     blurRadius: 24,
                     spreadRadius: 0,
                     offset: const Offset(0, 6),
                   ),
                   BoxShadow(
-                    color: AppColors.deepSpaceBlack.withOpacity(0.5),
+                    color: AppColors.deepSpaceBlack.withValues(alpha: 0.5),
                     blurRadius: 16,
                     offset: const Offset(0, 4),
                   ),
@@ -135,12 +135,12 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
                               colors: [
-                                AppColors.deepSpaceBlack.withOpacity(0.75),
-                                AppColors.deepSpaceBlack.withOpacity(0.65),
+                                AppColors.deepSpaceBlack.withValues(alpha: 0.75),
+                                AppColors.deepSpaceBlack.withValues(alpha: 0.65),
                               ],
                             ),
                             border: Border.all(
-                              color: _accent.withOpacity(0.3),
+                              color: _accent.withValues(alpha: 0.3),
                               width: 1.5,
                             ),
                             borderRadius: BorderRadius.circular(22),
@@ -162,7 +162,7 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
                       child: LinearProgressIndicator(
                         value: progress,
                         minHeight: 2.5,
-                        backgroundColor: AppColors.textPrimary.withOpacity(0.08),
+                        backgroundColor: AppColors.textPrimary.withValues(alpha: 0.08),
                         valueColor: AlwaysStoppedAnimation<Color>(_accent),
                       ),
                     ),
@@ -220,9 +220,9 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                                     decoration: BoxDecoration(
-                                      color: _accent.withOpacity(0.18),
+                                      color: _accent.withValues(alpha: 0.18),
                                       borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(color: _accent.withOpacity(0.35), width: 0.8),
+                                      border: Border.all(color: _accent.withValues(alpha: 0.35), width: 0.8),
                                     ),
                                     child: Text(
                                       specs.sampleRateDisplay,
@@ -270,7 +270,7 @@ class _FloatingMiniPlayerState extends ConsumerState<FloatingMiniPlayer>
                               color: _accent,
                               boxShadow: [
                                 BoxShadow(
-                                  color: _accent.withOpacity(0.55),
+                                  color: _accent.withValues(alpha: 0.55),
                                   blurRadius: 14,
                                   spreadRadius: 1,
                                 ),

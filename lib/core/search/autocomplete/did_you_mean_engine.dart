@@ -1,5 +1,4 @@
 import '../models/search_models.dart';
-import '../query/query_normalizer.dart';
 import '../query/spell_corrector.dart';
 
 /// Generates "Did you mean?" suggestions for search queries

@@ -121,7 +121,7 @@ class AudiusSearchProvider implements SearchProviderClient {
                 'repost_count': item['repost_count'],
                 'favorite_count': item['favorite_count'],
               },
-              matchedProviders: [SearchProviderType.audius],
+              matchedProviders: const [SearchProviderType.audius],
             ));
           }
         }

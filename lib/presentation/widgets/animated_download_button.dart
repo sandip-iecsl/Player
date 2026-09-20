@@ -95,7 +95,7 @@ class _AnimatedDownloadButtonState extends ConsumerState<AnimatedDownloadButton>
             ),
             boxShadow: [
               BoxShadow(
-                color: AppColors.neonPurple.withOpacity(0.6),
+                color: AppColors.neonPurple.withValues(alpha: 0.6),
                 blurRadius: 15,
                 offset: const Offset(0, 5),
               ),
@@ -121,8 +121,8 @@ class _AnimatedDownloadButtonState extends ConsumerState<AnimatedDownloadButton>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            AppColors.neonPurple.withOpacity(0.7),
-            AppColors.neonCyan.withOpacity(0.7),
+            AppColors.neonPurple.withValues(alpha: 0.7),
+            AppColors.neonCyan.withValues(alpha: 0.7),
           ],
         ),
       ),
@@ -138,7 +138,7 @@ class _AnimatedDownloadButtonState extends ConsumerState<AnimatedDownloadButton>
               valueColor: AlwaysStoppedAnimation<Color>(
                 isDark ? Colors.white : AppColors.deepSpaceBlack,
               ),
-              backgroundColor: Colors.grey.withOpacity(0.3),
+              backgroundColor: Colors.grey.withValues(alpha: 0.3),
             ),
           ),
           Text(
@@ -170,7 +170,7 @@ class _AnimatedDownloadButtonState extends ConsumerState<AnimatedDownloadButton>
         ),
         boxShadow: [
           BoxShadow(
-            color: AppColors.neonGreen.withOpacity(0.6),
+            color: AppColors.neonGreen.withValues(alpha: 0.6),
             blurRadius: 15,
             offset: const Offset(0, 5),
           ),
@@ -199,8 +199,8 @@ class _AnimatedDownloadButtonState extends ConsumerState<AnimatedDownloadButton>
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            AppColors.neonPurple.withOpacity(0.5),
-            AppColors.neonCyan.withOpacity(0.5),
+            AppColors.neonPurple.withValues(alpha: 0.5),
+            AppColors.neonCyan.withValues(alpha: 0.5),
           ],
         ),
       ),
@@ -221,10 +221,10 @@ class _AnimatedDownloadButtonState extends ConsumerState<AnimatedDownloadButton>
       height: 50,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        color: AppColors.neonPink.withOpacity(0.7),
+        color: AppColors.neonPink.withValues(alpha: 0.7),
         boxShadow: [
           BoxShadow(
-            color: AppColors.neonPink.withOpacity(0.6),
+            color: AppColors.neonPink.withValues(alpha: 0.6),
             blurRadius: 15,
             offset: const Offset(0, 5),
           ),

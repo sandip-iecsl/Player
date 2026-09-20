@@ -61,7 +61,7 @@ class AuraPlayerLogo extends StatelessWidget {
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: Colors.purple.withOpacity(0.3),
+                color: Colors.purple.withValues(alpha: 0.3),
                 blurRadius: 20,
                 spreadRadius: 2,
                 offset: const Offset(0, 4),
@@ -128,7 +128,7 @@ class _SandipBrandingState extends State<_SandipBranding>
           letterSpacing: 0.5,
           shadows: [
             Shadow(
-                color: Colors.black.withOpacity(0.5),
+                color: Colors.black.withValues(alpha: 0.5),
                 blurRadius: 2,
                 offset: const Offset(0, 1)),
           ],

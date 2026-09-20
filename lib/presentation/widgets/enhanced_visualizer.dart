@@ -762,7 +762,7 @@ class EnhancedVisualizerPainter extends CustomPainter {
       colors: [
         Colors.white,
         primaryColor,
-        primaryColor.withOpacity(0.0),
+        primaryColor.withValues(alpha: 0.0),
       ],
     ).createShader(Rect.fromCircle(center: Offset(cx, cy), radius: coreR * 1.5));
     
@@ -778,7 +778,7 @@ class EnhancedVisualizerPainter extends CustomPainter {
       final opacity = (1.0 - waveProgress) * pulse;
       
       p.strokeWidth = 2.0 + (1.0 - waveProgress) * 8.0;
-      p.color = primaryColor.withOpacity(opacity.clamp(0.0, 1.0));
+      p.color = primaryColor.withValues(alpha: opacity.clamp(0.0, 1.0));
       c.drawCircle(Offset(cx, cy), waveR, p);
     }
     
@@ -789,7 +789,7 @@ class EnhancedVisualizerPainter extends CustomPainter {
       final len = coreR + intensity * maxR * 0.4 * pulse;
       
       p.strokeWidth = 2.0 + intensity * 4.0;
-      p.color = primaryColor.withOpacity(0.6 * pulse);
+      p.color = primaryColor.withValues(alpha: 0.6 * pulse);
       c.drawLine(
         Offset(cx + cos(angle) * coreR, cy + sin(angle) * coreR),
         Offset(cx + cos(angle) * len, cy + sin(angle) * len),

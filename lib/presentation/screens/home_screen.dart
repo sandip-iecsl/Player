@@ -444,7 +444,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               SliverToBoxAdapter(
                 child: _isLoadingMore
                     ? Padding(
-                        padding: EdgeInsets.symmetric(vertical: 32),
+                        padding: const EdgeInsets.symmetric(vertical: 32),
                         child: Center(
                           child: SizedBox(
                             width: 26,
@@ -505,8 +505,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           content: Row(
             children: [
               Icon(Icons.refresh, color: AppColors.textPrimary, size: 16),
-              SizedBox(width: 8),
-              Text('Fresh music loaded based on your taste!'),
+              const SizedBox(width: 8),
+              const Text('Fresh music loaded based on your taste!'),
             ],
           ),
           backgroundColor: AppColors.neonPink,
@@ -581,7 +581,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               decoration: InputDecoration(
                 hintText: 'Passcode',
                 hintStyle:
-                    TextStyle(color: AppColors.textSecondary.withOpacity(0.4)),
+                    TextStyle(color: AppColors.textSecondary.withValues(alpha: 0.4)),
                 focusedBorder: UnderlineInputBorder(
                     borderSide: BorderSide(color: AppColors.neonPink)),
               ),
@@ -700,11 +700,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: Colors.redAccent.withOpacity(0.85),
+                  color: Colors.redAccent.withValues(alpha: 0.85),
                   borderRadius: BorderRadius.circular(8),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.redAccent.withOpacity(0.4),
+                      color: Colors.redAccent.withValues(alpha: 0.4),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -731,7 +731,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     borderRadius: BorderRadius.circular(8),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF0A66C2).withOpacity(0.4),
+                        color: const Color(0xFF0A66C2).withValues(alpha: 0.4),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -771,7 +771,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     borderRadius: BorderRadius.circular(8),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF25D366).withOpacity(0.4),
+                        color: const Color(0xFF25D366).withValues(alpha: 0.4),
                         blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
@@ -914,7 +914,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 ),
                 if (playing)
                   Padding(
-                    padding: EdgeInsets.only(right: 4),
+                    padding: const EdgeInsets.only(right: 4),
                     child: Icon(Icons.equalizer_rounded,
                         color: AppColors.neonPink, size: 14),
                   ),

@@ -160,6 +160,6 @@ class UserModel {
         currentRoomId: currentRoomId ?? this.currentRoomId,
         createdAt: createdAt,
         appVersion: appVersion ?? this.appVersion,
-        platform: platform ?? this.platform,
+        platform: platform ?? platform,
       );
 }

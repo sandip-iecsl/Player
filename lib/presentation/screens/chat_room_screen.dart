@@ -9,7 +9,6 @@ import '../../core/constants/app_colors.dart';
 import '../../data/services/local_chat_service.dart';
 import '../../domain/repositories/chat_repository.dart';
 import '../../data/models/chat_message_model.dart';
-import '../providers/audio_provider.dart';
 import 'package:uuid/uuid.dart';
 import '../../core/events/event_dispatcher.dart';
 import '../../core/events/chat_events.dart';
@@ -403,12 +402,12 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
                           colors: [
-                            AppColors.neonPink.withOpacity(0.15),
-                            AppColors.neonCoral.withOpacity(0.05),
+                            AppColors.neonPink.withValues(alpha: 0.15),
+                            AppColors.neonCoral.withValues(alpha: 0.05),
                           ],
                         ),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: AppColors.neonPink.withOpacity(0.3)),
+                        border: Border.all(color: AppColors.neonPink.withValues(alpha: 0.3)),
                       ),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       child: Row(
@@ -478,7 +477,7 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                                       boxShadow: isMe
                                           ? [
                                               BoxShadow(
-                                                color: const Color(0xFFFF2A7A).withOpacity(0.4),
+                                                color: const Color(0xFFFF2A7A).withValues(alpha: 0.4),
                                                 blurRadius: 10,
                                                 spreadRadius: 1,
                                               )
@@ -550,10 +549,10 @@ class _ChatRoomScreenState extends State<ChatRoomScreen> {
                                     child: Container(
                                       decoration: BoxDecoration(
                                         borderRadius: BorderRadius.circular(24),
-                                        color: Colors.black.withOpacity(0.5),
+                                        color: Colors.black.withValues(alpha: 0.5),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: Colors.white.withOpacity(0.05),
+                                            color: Colors.white.withValues(alpha: 0.05),
                                             blurRadius: 1,
                                             offset: const Offset(0, 1),
                                           ),

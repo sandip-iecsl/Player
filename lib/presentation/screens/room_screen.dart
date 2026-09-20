@@ -109,7 +109,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         CircularProgressIndicator(color: AppColors.neonPink),
-                        SizedBox(height: 16),
+                        const SizedBox(height: 16),
                         Text('Searching for friends...',
                             style: TextStyle(color: AppColors.textSecondary)),
                       ],
@@ -264,10 +264,10 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
               margin: const EdgeInsets.only(bottom: 20),
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: AppColors.neonPink.withOpacity(0.1),
+                color: AppColors.neonPink.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(16),
                 border:
-                    Border.all(color: AppColors.neonPink.withOpacity(0.3)),
+                    Border.all(color: AppColors.neonPink.withValues(alpha: 0.3)),
               ),
               child: Row(
                 children: [
@@ -339,7 +339,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                     Container(
                       padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
-                        color: AppColors.neonPink.withOpacity(0.2),
+                        color: AppColors.neonPink.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Icon(
@@ -372,7 +372,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                 color: AppColors.deepSpaceBlackLighter,
                 borderRadius: BorderRadius.circular(12),
                 border:
-                    Border.all(color: AppColors.neonPink.withOpacity(0.5)),
+                    Border.all(color: AppColors.neonPink.withValues(alpha: 0.5)),
               ),
               child: Column(
                 children: [
@@ -451,7 +451,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
                       height: 14,
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: AppColors.neonPink)),
-                  SizedBox(width: 12),
+                  const SizedBox(width: 12),
                   Text('Every device sounding at once soon...',
                       style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                 ],
@@ -484,7 +484,7 @@ class _RoomScreenState extends ConsumerState<RoomScreen> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: AppColors.neonPink.withOpacity(0.2),
+                color: AppColors.neonPink.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(4),
                 border: Border.all(color: AppColors.neonPink),
               ),

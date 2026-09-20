@@ -68,7 +68,7 @@ class JioSaavnSearchProvider implements SearchProviderClient {
             'id': s.id,
             'has_stream': s.previewUrl != null && s.previewUrl!.isNotEmpty,
           },
-          matchedProviders: [SearchProviderType.jiosaavn],
+          matchedProviders: const [SearchProviderType.jiosaavn],
         );
       }).toList();
 

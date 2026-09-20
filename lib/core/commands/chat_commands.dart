@@ -3,20 +3,14 @@ import 'app_command.dart';
 
 class CreateMessageCommand extends AppCommand {
   CreateMessageCommand({
-    required String commandId,
-    required DateTime timestamp,
-    int retryCount = 0,
-    CommandPriority priority = CommandPriority.medium,
-    CommandStatus status = CommandStatus.pending,
-    required Map<String, dynamic> payload,
+    required super.commandId,
+    required super.timestamp,
+    super.retryCount,
+    super.priority = CommandPriority.medium,
+    super.status,
+    required super.payload,
   }) : super(
-          commandId: commandId,
-          timestamp: timestamp,
-          retryCount: retryCount,
-          priority: priority,
-          status: status,
           type: 'CreateMessageCommand',
-          payload: payload,
         );
 
   @override
@@ -51,20 +45,14 @@ class CreateMessageCommand extends AppCommand {
 
 class UpdateMessageCommand extends AppCommand {
   UpdateMessageCommand({
-    required String commandId,
-    required DateTime timestamp,
-    int retryCount = 0,
-    CommandPriority priority = CommandPriority.medium,
-    CommandStatus status = CommandStatus.pending,
-    required Map<String, dynamic> payload,
+    required super.commandId,
+    required super.timestamp,
+    super.retryCount,
+    super.priority = CommandPriority.medium,
+    super.status,
+    required super.payload,
   }) : super(
-          commandId: commandId,
-          timestamp: timestamp,
-          retryCount: retryCount,
-          priority: priority,
-          status: status,
           type: 'UpdateMessageCommand',
-          payload: payload,
         );
 
   @override
@@ -91,20 +79,14 @@ class UpdateMessageCommand extends AppCommand {
 
 class DeleteMessageCommand extends AppCommand {
   DeleteMessageCommand({
-    required String commandId,
-    required DateTime timestamp,
-    int retryCount = 0,
-    CommandPriority priority = CommandPriority.medium,
-    CommandStatus status = CommandStatus.pending,
-    required Map<String, dynamic> payload,
+    required super.commandId,
+    required super.timestamp,
+    super.retryCount,
+    super.priority = CommandPriority.medium,
+    super.status,
+    required super.payload,
   }) : super(
-          commandId: commandId,
-          timestamp: timestamp,
-          retryCount: retryCount,
-          priority: priority,
-          status: status,
           type: 'DeleteMessageCommand',
-          payload: payload,
         );
 
   @override
@@ -132,20 +114,14 @@ class DeleteMessageCommand extends AppCommand {
 
 class CreateConversationCommand extends AppCommand {
   CreateConversationCommand({
-    required String commandId,
-    required DateTime timestamp,
-    int retryCount = 0,
-    CommandPriority priority = CommandPriority.medium,
-    CommandStatus status = CommandStatus.pending,
-    required Map<String, dynamic> payload,
+    required super.commandId,
+    required super.timestamp,
+    super.retryCount,
+    super.priority = CommandPriority.medium,
+    super.status,
+    required super.payload,
   }) : super(
-          commandId: commandId,
-          timestamp: timestamp,
-          retryCount: retryCount,
-          priority: priority,
-          status: status,
           type: 'CreateConversationCommand',
-          payload: payload,
         );
 
   @override
@@ -169,20 +145,14 @@ class CreateConversationCommand extends AppCommand {
 
 class UpdatePresenceCommand extends AppCommand {
   UpdatePresenceCommand({
-    required String commandId,
-    required DateTime timestamp,
-    int retryCount = 0,
-    CommandPriority priority = CommandPriority.high,
-    CommandStatus status = CommandStatus.pending,
-    required Map<String, dynamic> payload,
+    required super.commandId,
+    required super.timestamp,
+    super.retryCount,
+    super.priority = CommandPriority.high,
+    super.status,
+    required super.payload,
   }) : super(
-          commandId: commandId,
-          timestamp: timestamp,
-          retryCount: retryCount,
-          priority: priority,
-          status: status,
           type: 'UpdatePresenceCommand',
-          payload: payload,
         );
 
   @override

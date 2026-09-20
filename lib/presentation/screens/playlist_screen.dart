@@ -284,7 +284,7 @@ class _PlaylistScreenState extends ConsumerState<PlaylistScreen> {
                       decoration: BoxDecoration(
                         boxShadow: [
                           BoxShadow(
-                            color: AppColors.deepSpaceBlack.withOpacity(0.5),
+                            color: AppColors.deepSpaceBlack.withValues(alpha: 0.5),
                             offset: const Offset(0, 10),
                             blurRadius: 20,
                           )

@@ -283,9 +283,9 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       decoration: BoxDecoration(
-                        color: Colors.redAccent.withOpacity(0.15),
+                        color: Colors.redAccent.withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.redAccent.withOpacity(0.4)),
+                        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.4)),
                       ),
                       child: const Row(
                         mainAxisSize: MainAxisSize.min,
@@ -390,7 +390,7 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
               children: [
                 if (songs.isNotEmpty) ...[
                   Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8.0),
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Text('Songs', style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
                   ...songs.take(5).map((song) => ListTile(
@@ -419,7 +419,7 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
                 ],
                 if (albums.isNotEmpty) ...[
                   Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8.0),
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Text('Albums', style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
                   ...albums.take(3).map((album) {
@@ -446,7 +446,7 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
                 ],
                 if (artists.isNotEmpty) ...[
                   Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8.0),
+                    padding: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Text('Artists', style: TextStyle(color: AppColors.textPrimary, fontSize: 16, fontWeight: FontWeight.bold)),
                   ),
                   ...artists.take(3).map((artist) {
@@ -494,7 +494,7 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(Icons.search, color: AppColors.textSecondary, size: 60),
-            SizedBox(height: 16),
+            const SizedBox(height: 16),
             Text(
               'Search for songs, artists, albums',
               style: TextStyle(color: AppColors.textSecondary, fontSize: 16),
@@ -720,7 +720,7 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
                 if (index == 1) {
                   if (displayResults.length == 1) return const SizedBox.shrink();
                   return Padding(
-                    padding: EdgeInsets.only(bottom: 16.0),
+                    padding: const EdgeInsets.only(bottom: 16.0),
                     child: Text(
                       'Songs',
                       style: TextStyle(color: AppColors.textPrimary, fontSize: 20, fontWeight: FontWeight.bold),
@@ -1014,7 +1014,7 @@ class _SearchSongTileState extends ConsumerState<SearchSongTile> {
             children: [
               if (!isAvailable) ...[
                 Icon(Icons.warning_amber_rounded, color: AppColors.neonCoral, size: 14),
-                SizedBox(width: 4),
+                const SizedBox(width: 4),
                 Text(
                   'Unavailable • ',
                   style: TextStyle(color: AppColors.neonCoral, fontSize: 12),
