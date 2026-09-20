@@ -1,9 +1,9 @@
-﻿services:
+services:
   - type: web
     name: aura-youtube-extractor
     runtime: docker
     rootDir: youtube-extractor-microservice
-    dockerfilePath: youtube-extractor-microservice/Dockerfile
+    dockerfilePath: Dockerfile
     region: singapore
     plan: free
     healthCheckPath: /health

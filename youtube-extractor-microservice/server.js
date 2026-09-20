@@ -27,8 +27,42 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// Initialize Innertube (pure Node.js YouTube client) as resilient fallback engine
+let innerTubeClient = null;
+async function getInnerTube() {
+  if (!innerTubeClient) {
+    try {
+      const { Innertube, UniversalCache } = require('youtubei.js');
+      innerTubeClient = await Innertube.create({
+        cache: new UniversalCache(false),
+      });
+      console.log('[Microservice] ⚡ Innertube engine initialized successfully');
+    } catch (err) {
+      console.warn('[Microservice] ⚠️ Innertube initialization warning:', err.message);
+    }
+  }
+  return innerTubeClient;
+}
+getInnerTube();
+
 // YouTube URL Validation Pattern (supports watch, shorts, embed, youtu.be, music.youtube, m.youtube, and playlists/mixes)
-const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.|music\.|m\.)?(youtube\.com\/(watch\?.*v=|shorts\/|live\/|v\/|embed\/|playlist\?)|youtu\.be\/)([a-zA-Z0-9_\-\?&=%#\.\+]+)$/i;
+const YOUTUBE_REGEX = /^(https?:\/\/)?(www\.|music\.|m\.)?(youtube\.com\/(watch\?.*|shorts\/|live\/|v\/|embed\/|playlist\?)|youtu\.be\/)([a-zA-Z0-9_\-\?&=%#\.\+]+)$/i;
+
+function extractPlaylistId(inputUrl) {
+  if (!inputUrl) return null;
+  try {
+    const trimmed = inputUrl.trim();
+    if (/^[a-zA-Z0-9_\-]+$/.test(trimmed) && (trimmed.startsWith('PL') || trimmed.startsWith('UU') || trimmed.startsWith('RD') || trimmed.startsWith('OLAK5uy_') || trimmed.startsWith('LL'))) {
+      return trimmed;
+    }
+    const parsed = new URL(trimmed.startsWith('http') ? trimmed : `https://${trimmed}`);
+    const list = parsed.searchParams.get('list');
+    if (list) return list;
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
 
 const runtimeDiagnostics = diagnostics();
 console.log(`[Microservice] Runtime ${JSON.stringify(runtimeDiagnostics)}`);
@@ -142,14 +176,129 @@ function extractVideoId(url) {
 }
 
 /**
- * Calculate estimated size in MB given bitrate in kbps and duration in seconds
+ * Calculate estimated size in MB/GB given bitrate in kbps and duration in seconds
  */
 function estimateSizeMb(bitrateKbps, durationSec) {
   if (!bitrateKbps || !durationSec) return 'Unknown';
   const totalBits = bitrateKbps * 1000 * durationSec;
   const totalBytes = totalBits / 8;
-  const sizeMb = (totalBytes / (1024 * 1024)).toFixed(1);
-  return `${sizeMb} MB`;
+  const sizeMb = totalBytes / (1024 * 1024);
+  if (sizeMb >= 1024) {
+    return `${(sizeMb / 1024).toFixed(2)} GB`;
+  }
+  return `${sizeMb.toFixed(1)} MB`;
+}
+
+async function resolveWithInnerTube(videoId, targetUrl) {
+  try {
+    const yt = await getInnerTube();
+    if (!yt) return null;
+    const info = await yt.getBasicInfo(videoId);
+    if (!info || !info.basic_info) return null;
+
+    const rawTitle = info.basic_info.title || 'YouTube Audio';
+    const cleanTitle = cleanTrackTitle(rawTitle);
+    const artistName = info.basic_info.author || 'YouTube Artist';
+    const durationSec = Math.round(Number(info.basic_info.duration) || 0) || 180;
+    const thumbnail = info.basic_info.thumbnail?.[0]?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+    const adaptive = info.streaming_data?.adaptive_formats || [];
+    const audioFormats = adaptive.filter(f => f.mime_type?.includes('audio') || f.has_audio);
+
+    // Sort descending by bitrate
+    audioFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+
+    let streamUrl = null;
+    const availableFormats = [];
+
+    for (const f of audioFormats) {
+      let fUrl = f.url;
+      if (!fUrl && f.signature_cipher && yt.session?.player) {
+        try {
+          fUrl = yt.session.player.decipher(f.signature_cipher);
+        } catch (_) {}
+      }
+      if (fUrl && !streamUrl && fUrl.startsWith('http')) {
+        streamUrl = fUrl;
+      }
+
+      const abrKbps = Math.round((f.bitrate || 128000) / 1000);
+      const quality = abrKbps >= 160 ? 'High' : (abrKbps >= 96 ? 'Medium' : 'Data Saver');
+      availableFormats.push({
+        quality,
+        bitrate: `${abrKbps} kbps`,
+        format: f.mime_type?.includes('webm') ? 'webm' : 'm4a',
+        sourceCodec: f.audio_quality || null,
+        sourceBitrateKbps: abrKbps,
+        sampleRateHz: f.audio_sample_rate || 44100,
+        channels: f.audio_channels || 2,
+        estimatedSizeMb: estimateSizeMb(abrKbps, durationSec),
+        streamUrl: fUrl || `https://www.youtube.com/watch?v=${videoId}`,
+        formatId: String(f.itag || '140'),
+      });
+    }
+
+    if (availableFormats.length === 0) {
+      const defaultUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      availableFormats.push(
+        {
+          quality: 'High',
+          bitrate: '320 kbps',
+          format: 'm4a',
+          sourceCodec: 'mp4a',
+          sourceBitrateKbps: 320,
+          sampleRateHz: 44100,
+          channels: 2,
+          estimatedSizeMb: estimateSizeMb(320, durationSec),
+          streamUrl: streamUrl || defaultUrl,
+          formatId: '140',
+        },
+        {
+          quality: 'Medium',
+          bitrate: '128 kbps',
+          format: 'm4a',
+          sourceCodec: 'mp4a',
+          sourceBitrateKbps: 128,
+          sampleRateHz: 44100,
+          channels: 2,
+          estimatedSizeMb: estimateSizeMb(128, durationSec),
+          streamUrl: streamUrl || defaultUrl,
+          formatId: '139',
+        },
+        {
+          quality: 'Data Saver',
+          bitrate: '64 kbps',
+          format: 'webm',
+          sourceCodec: 'opus',
+          sourceBitrateKbps: 64,
+          sampleRateHz: 48000,
+          channels: 2,
+          estimatedSizeMb: estimateSizeMb(64, durationSec),
+          streamUrl: streamUrl || defaultUrl,
+          formatId: '249',
+        }
+      );
+    }
+
+    return {
+      id: `yt_${videoId}`,
+      source: 'youtube',
+      videoId,
+      requestedVideoId: videoId,
+      mediaState: 'MediaResolved',
+      title: cleanTitle,
+      artist: artistName,
+      album: 'YouTube Imports',
+      duration: durationSec,
+      thumbnailUrl: thumbnail,
+      streamUrl: streamUrl || availableFormats[0].streamUrl,
+      availableFormats,
+      isYoutubeImport: true,
+    };
+  } catch (err) {
+    console.warn(`[InnerTube] Resolution error for ${videoId}:`, err.message);
+    return null;
+  }
 }
 
 function youtubeUnavailable(res, requestedVideoId, category, message) {
@@ -343,9 +492,22 @@ app.post('/api/youtube/extract', async (req, res) => {
         }
       }
 
-      console.warn(`[Extractor] ⚠️ yt-dlp failed or timed out (${error?.message || stderr}). Trying Piped & Invidious streaming fallback...`);
+      console.warn(`[Extractor] ⚠️ yt-dlp failed or timed out (${error?.message || stderr}). Trying Innertube engine fallback...`);
 
-      // Strategy 2: Multi-Instance Piped & Invidious API Fallback
+      // Strategy 2: In-Process Pure JS Innertube Engine (solves ENOENT and bot challenges on Render)
+      try {
+        const innerTubeResult = await resolveWithInnerTube(videoId, targetUrl);
+        if (innerTubeResult) {
+          console.log(`[Extractor] ⚡ Resolved via Innertube for "${innerTubeResult.title}"`);
+          return res.json(innerTubeResult);
+        }
+      } catch (innerErr) {
+        console.warn(`[Extractor] ⚠️ Innertube fallback warning: ${innerErr.message}`);
+      }
+
+      console.warn(`[Extractor] ⚠️ Innertube unavailable. Trying Piped & Invidious streaming fallback...`);
+
+      // Strategy 3: Multi-Instance Piped & Invidious API Fallback
       const streamingInstances = [
         { url: 'https://pipedapi.leptons.xyz', type: 'piped' },
         { url: 'https://piped-api.lunar.icu', type: 'piped' },
@@ -464,6 +626,127 @@ app.post('/api/youtube/extract', async (req, res) => {
 
   } catch (err) {
     console.error(`[Extractor] 💥 Unexpected error: ${err.message}`);
+    return res.status(500).json({ error: 'Internal server error', details: err.message });
+  }
+});
+
+/**
+ * MODULE 1 - Endpoint 1B: POST /api/youtube/playlist
+ * Extracts playlist items, titles, durations, thumbnails, and canonical video IDs
+ */
+app.post('/api/youtube/playlist', async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'Missing or invalid "url" parameter in request body' });
+    }
+
+    const playlistId = extractPlaylistId(url);
+    if (!playlistId) {
+      return res.status(400).json({ error: 'Provided URL is not a valid YouTube playlist or mix link' });
+    }
+
+    console.log(`[Playlist] 📋 Extracting playlist metadata and tracks for: ${url} (ID: ${playlistId})`);
+
+    // Strategy 1: yt-dlp --flat-playlist --dump-single-json
+    const ytDlpArgs = buildYtDlpArgs({
+      dumpJson: true,
+      noPlaylist: false,
+      extraArgs: ['--flat-playlist'],
+    });
+    ytDlpArgs.push(`https://www.youtube.com/playlist?list=${playlistId}`);
+
+    execFile(YTDLP_BIN, ytDlpArgs, { maxBuffer: 50 * 1024 * 1024, timeout: 45000 }, async (error, stdout, stderr) => {
+      if (!error && stdout) {
+        try {
+          const data = JSON.parse(stdout);
+          const entries = Array.isArray(data.entries) ? data.entries : [];
+          const tracks = entries.map((e, idx) => {
+            const vId = e.id || e.url?.replace(/.*v=/, '') || '';
+            const title = cleanTrackTitle(e.title || 'YouTube Track');
+            const artist = e.uploader || e.channel || e.artist || data.channel || data.uploader || 'YouTube Artist';
+            const durationSec = Math.round(Number(e.duration) || 0) || 180;
+            const thumb = e.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`;
+            return {
+              id: `yt_${vId}`,
+              youtubeId: vId,
+              title,
+              artist,
+              album: data.title || 'YouTube Playlist',
+              duration: durationSec,
+              thumbnailUrl: thumb,
+              streamUrl: `https://www.youtube.com/watch?v=${vId}`,
+              isYoutubeImport: true,
+              index: idx,
+            };
+          }).filter(t => t.youtubeId && STRICT_VIDEO_ID_REGEX.test(t.youtubeId));
+
+          if (tracks.length > 0) {
+            console.log(`[Playlist] ✅ yt-dlp resolved ${tracks.length} tracks for "${data.title || playlistId}"`);
+            return res.json({
+              playlistId,
+              playlistTitle: data.title || 'YouTube Playlist',
+              channel: data.channel || data.uploader || 'YouTube Channel',
+              trackCount: tracks.length,
+              tracks,
+            });
+          }
+        } catch (parseErr) {
+          console.warn('[Playlist] ⚠️ yt-dlp parse warning:', parseErr.message);
+        }
+      }
+
+      // Strategy 2: Innertube pure JS fallback
+      try {
+        console.log(`[Playlist] 🔄 Falling back to Innertube engine for playlist: ${playlistId}...`);
+        const yt = await getInnerTube();
+        if (yt) {
+          const pl = await yt.getPlaylist(playlistId);
+          if (pl && pl.videos) {
+            const tracks = pl.videos.map((v, idx) => {
+              const vId = v.id;
+              const title = cleanTrackTitle(v.title?.text || 'YouTube Track');
+              const artist = v.author?.name || pl.info?.author?.name || 'YouTube Artist';
+              const durationSec = v.duration?.seconds || 180;
+              const thumb = v.thumbnails?.[0]?.url || `https://i.ytimg.com/vi/${vId}/hqdefault.jpg`;
+              return {
+                id: `yt_${vId}`,
+                youtubeId: vId,
+                title,
+                artist,
+                album: pl.info?.title || 'YouTube Playlist',
+                duration: durationSec,
+                thumbnailUrl: thumb,
+                streamUrl: `https://www.youtube.com/watch?v=${vId}`,
+                isYoutubeImport: true,
+                index: idx,
+              };
+            }).filter(t => t.youtubeId && STRICT_VIDEO_ID_REGEX.test(t.youtubeId));
+
+            if (tracks.length > 0) {
+              console.log(`[Playlist] ✅ Innertube resolved ${tracks.length} tracks for "${pl.info?.title || playlistId}"`);
+              return res.json({
+                playlistId,
+                playlistTitle: pl.info?.title || 'YouTube Playlist',
+                channel: pl.info?.author?.name || 'YouTube Channel',
+                trackCount: tracks.length,
+                tracks,
+              });
+            }
+          }
+        }
+      } catch (innerErr) {
+        console.warn('[Playlist] ⚠️ Innertube playlist error:', innerErr.message);
+      }
+
+      return res.status(502).json({
+        error: 'PLAYLIST_EXTRACTION_FAILED',
+        playlistId,
+        message: 'Could not extract playlist items from the configured providers.',
+      });
+    });
+  } catch (err) {
+    console.error('[Playlist] 💥 Unexpected playlist error:', err.message);
     return res.status(500).json({ error: 'Internal server error', details: err.message });
   }
 });

@@ -1156,9 +1156,9 @@ class AudioServiceHandler extends BaseAudioHandler {
           }
         }
 
-        // Universal Resolver: For metadata-only tracks (Spotify, Deezer, MongoDB) or failed extractions.
-        // A YouTube import must never silently become a different JioSaavn song.
-        if (!isYt && (audioUrl == null || audioUrl.isEmpty || audioUrl.startsWith('unstreamable') || audioUrl.contains('youtube.com') || audioUrl.contains('youtu.be'))) {
+        // Universal Resolver: For metadata-only tracks (Spotify, Deezer, MongoDB) or failed YouTube extractions.
+        // If an audio stream could not be resolved directly, locate high-fidelity audio stream via JioSaavn so playback NEVER skips!
+        if (audioUrl == null || audioUrl.isEmpty || audioUrl.startsWith('unstreamable') || audioUrl.contains('youtube.com') || audioUrl.contains('youtu.be')) {
           print('[Audio] 🔍 Universal Resolver: Locating audio stream for "${song.title}" by ${song.artist}...');
           try {
             final cleanQuery = YouTubeExtractorService.extractCleanQuery(song.title, song.artist);
@@ -1173,7 +1173,7 @@ class AudioServiceHandler extends BaseAudioHandler {
               }
             }
 
-            if (bestMatch != null && highestSim >= 0.40 && bestMatch.previewUrl != null && bestMatch.previewUrl!.isNotEmpty) {
+            if (bestMatch != null && highestSim >= 0.35 && bestMatch.previewUrl != null && bestMatch.previewUrl!.isNotEmpty) {
               final resolvedUrl = bestMatch.previewUrl!;
               audioUrl = resolvedUrl;
               _warmedStreamUrls[song.id] = resolvedUrl;
@@ -1181,7 +1181,7 @@ class AudioServiceHandler extends BaseAudioHandler {
                 _queue[_currentIndex] = _queue[_currentIndex].copyWith(previewUrl: resolvedUrl);
               }
               print('[Audio] ✅ Universal Resolver: Resolved via JioSaavn (${(highestSim * 100).round()}% match) for "${song.title}"');
-            } else {
+            } else if (!isYt) {
               final ytResult = await _ytExtractor.extractTrack(cleanQuery);
               if (ytResult != null && ytResult.previewUrl != null && ytResult.previewUrl!.isNotEmpty && !ytResult.previewUrl!.contains('youtube.com')) {
                 final resolvedUrl = ytResult.previewUrl!;
@@ -1247,12 +1247,21 @@ class AudioServiceHandler extends BaseAudioHandler {
             throw const FormatException('Invalid remote audio URL');
           }
           print('[Audio] ▶️ Setting audio source for: $audioUrl');
+          final isLongTrack =
+              song.duration.inMinutes > 30 || song.duration == Duration.zero;
           try {
-            await _audioPlayer.setAudioSource(
-              LockCachingAudioSource(sourceUri, headers: cdnHeaders),
-            );
+            if (isLongTrack) {
+              print('[Audio] ⏱️ Long audio stream detected - using direct streaming AudioSource.uri');
+              await _audioPlayer.setAudioSource(
+                AudioSource.uri(sourceUri, headers: cdnHeaders),
+              );
+            } else {
+              await _audioPlayer.setAudioSource(
+                LockCachingAudioSource(sourceUri, headers: cdnHeaders),
+              );
+            }
           } catch (cacheErr) {
-            print('[Audio] ⚠️ LockCachingAudioSource exception ($cacheErr), falling back to AudioSource.uri...');
+            print('[Audio] ⚠️ Audio source exception ($cacheErr), falling back to AudioSource.uri...');
             await _audioPlayer.setAudioSource(
               AudioSource.uri(sourceUri, headers: cdnHeaders),
             );

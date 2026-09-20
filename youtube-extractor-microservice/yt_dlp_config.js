@@ -4,10 +4,9 @@ const path = require('path');
 
 const SERVER_VERSION = '2026.09.19';
 const COOKIE_RUNTIME_PATH = path.join(require('os').tmpdir(), 'aura-youtube-cookies.txt');
-const YTDLP_BIN = process.env.YTDLP_BIN || (fs.existsSync(path.join(__dirname, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'))
-  ? path.join(__dirname, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp')
-  : 'yt-dlp');
-const JS_RUNTIME = process.env.YTDLP_JS_RUNTIME || (process.platform === 'win32' ? 'node' : '/usr/local/bin/deno');
+const localBin = path.join(__dirname, process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp');
+const YTDLP_BIN = process.env.YTDLP_BIN || (fs.existsSync(localBin) ? localBin : 'yt-dlp');
+const JS_RUNTIME = process.env.YTDLP_JS_RUNTIME || (process.platform === 'win32' ? 'node' : (fs.existsSync('/usr/local/bin/deno') ? '/usr/local/bin/deno' : 'node'));
 const PYTHON_BIN = process.env.YTMUSICAPI_PYTHON || (process.platform === 'win32' ? 'python' : 'python3');
 const YTMUSIC_BRIDGE = path.join(__dirname, 'ytmusic_bridge.py');
 
@@ -41,17 +40,13 @@ function prepareCookies() {
 
 const cookiePath = prepareCookies();
 
-function buildYtDlpArgs({ format, dumpJson = false, getUrl = false, outputPath = null, extraArgs = [] } = {}) {
+function buildYtDlpArgs({ format, dumpJson = false, getUrl = false, noPlaylist = true, outputPath = null, extraArgs = [] } = {}) {
   const args = [
     ...(dumpJson ? ['--dump-single-json'] : []),
     ...(getUrl ? ['-g'] : []),
     '--no-warnings',
-    '--no-playlist',
+    ...(noPlaylist ? ['--no-playlist'] : []),
     '--no-check-certificates',
-    '--remote-components', 'ejs:github',
-    '--js-runtimes', JS_RUNTIME,
-    '--extractor-args', 'youtube:player_client=tv_embedded,mweb,android,ios',
-    '--extractor-args', 'youtube:player_skip=webpage,configs',
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     ...(format ? ['-f', format] : []),
     ...(outputPath ? ['-o', outputPath] : []),

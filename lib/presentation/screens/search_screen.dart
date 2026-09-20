@@ -12,6 +12,7 @@ import '../widgets/playlist_dialogs.dart';
 import '../widgets/skeleton_shimmer.dart';
 import '../../core/constants/app_colors.dart';
 import '../providers/theme_provider.dart';
+import '../../data/services/youtube_extractor_service.dart';
 
 import '../widgets/import_link_modal.dart';
 
@@ -314,14 +315,24 @@ class SearchScreenState extends ConsumerState<SearchScreen> {
                 controller: _searchController,
                 focusNode: _focusNode,
                 onChanged: (val) {
+                  final trimmed = val.trim();
+                  final isYt = YouTubeExtractorService.isYouTubeUrl(trimmed);
                   setState(() {
                     _liveQuery = val;
-                    _showResults = false;
+                    if (isYt) {
+                      _submittedQuery = trimmed;
+                      _showResults = true;
+                    } else {
+                      _showResults = false;
+                    }
                   });
                   if (_debounce?.isActive ?? false) _debounce!.cancel();
                   _debounce = Timer(const Duration(milliseconds: 300), () {
                     if (mounted) {
-                      setState(() => _debouncedQuery = val.trim());
+                      setState(() => _debouncedQuery = trimmed);
+                      if (isYt && _submittedQuery != trimmed) {
+                        _onSubmit(trimmed);
+                      }
                     }
                   });
                 },

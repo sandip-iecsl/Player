@@ -66,12 +66,14 @@ class YouTubeAudioFormat {
     };
   }
 
-  /// Helper to estimate file size in MB given bitrate in kbps and duration in seconds
+  /// Helper to estimate file size in MB or GB given bitrate in kbps and duration in seconds
   static String estimateSizeMb(double bitrateKbps, int durationSec) {
     if (durationSec <= 0) return 'Unknown';
-    final mb = ((bitrateKbps * 1000 * durationSec) / (8 * 1024 * 1024))
-        .toStringAsFixed(1);
-    return '$mb MB';
+    final mb = (bitrateKbps * 1000 * durationSec) / (8 * 1024 * 1024);
+    if (mb >= 1024) {
+      return '${(mb / 1024).toStringAsFixed(2)} GB';
+    }
+    return '${mb.toStringAsFixed(1)} MB';
   }
 
   /// Default predefined fallback tiers

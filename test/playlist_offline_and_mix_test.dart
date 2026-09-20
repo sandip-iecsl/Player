@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:aura_player/data/services/youtube_extractor_service.dart';
+import 'package:aura_player/data/models/youtube_audio_format.dart';
 import 'package:aura_player/domain/entities/song.dart';
 import 'package:aura_player/presentation/providers/playlist_provider.dart';
 
@@ -64,6 +65,36 @@ void main() {
       expect(YouTubeExtractorService.enforceStrictVideoUrl(userTargetUrl), equals('https://www.youtube.com/watch?v=OWYoMZ8Po6A'));
       final sanitizedTarget = YouTubeExtractorService.sanitizeYouTubeLink(userTargetUrl);
       expect(sanitizedTarget, isNot(contains('si=')));
+    });
+
+    test('Correctly identifies and parses YouTube playlist links', () {
+      const standardPlaylistUrl = 'https://www.youtube.com/playlist?list=PL1234567890abcdef';
+      expect(YouTubeExtractorService.isPlaylistUrl(standardPlaylistUrl), isTrue);
+      expect(YouTubeExtractorService.extractPlaylistId(standardPlaylistUrl), equals('PL1234567890abcdef'));
+      expect(YouTubeExtractorService.isYouTubeUrl(standardPlaylistUrl), isTrue);
+
+      const watchPlaylistUrl = 'https://www.youtube.com/watch?v=kJQP7kiw5Fk&list=PL1234567890abcdef';
+      expect(YouTubeExtractorService.isPlaylistUrl(watchPlaylistUrl), isTrue);
+      expect(YouTubeExtractorService.extractPlaylistId(watchPlaylistUrl), equals('PL1234567890abcdef'));
+
+      // Dynamic mix RD links should NOT be treated as static playlists
+      const mixUrl = 'https://youtube.com/playlist?list=RD_JL6JAf-HKw';
+      expect(YouTubeExtractorService.isPlaylistUrl(mixUrl), isFalse);
+    });
+
+    test('Formats long track duration and file sizes accurately including GB', () {
+      // Short track (3 mins)
+      expect(YouTubeExtractorService.formatDuration(const Duration(minutes: 3, seconds: 45)), equals('3:45'));
+
+      // Long video (2 hours, 15 minutes, 8 seconds)
+      expect(YouTubeExtractorService.formatDuration(const Duration(hours: 2, minutes: 15, seconds: 8)), equals('2:15:08'));
+
+      // Size calculation under 1 GB
+      expect(YouTubeAudioFormat.estimateSizeMb(128, 180), equals('2.7 MB'));
+
+      // Size calculation over 1 GB (e.g., 320 kbps for 10 hours)
+      final largeSize = YouTubeAudioFormat.estimateSizeMb(320, 36000);
+      expect(largeSize, contains('GB'));
     });
   });
 

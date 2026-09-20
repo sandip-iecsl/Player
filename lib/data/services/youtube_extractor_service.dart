@@ -21,6 +21,25 @@ class YouTubeExtractionResult {
   });
 }
 
+/// Result envelope for extracted YouTube playlists
+class YouTubePlaylistResult {
+  final String id;
+  final String title;
+  final String? channel;
+  final String? thumbnailUrl;
+  final int trackCount;
+  final List<SongModel> tracks;
+
+  const YouTubePlaylistResult({
+    required this.id,
+    required this.title,
+    this.channel,
+    this.thumbnailUrl,
+    required this.trackCount,
+    required this.tracks,
+  });
+}
+
 class YouTubeSourceUnavailable implements Exception {
   final String requestedVideoId;
   final String category;
@@ -47,8 +66,8 @@ class YouTubeExtractorService {
   YouTubeExtractorService._internal();
 
   final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 40),
-    receiveTimeout: const Duration(seconds: 60),
+    connectTimeout: const Duration(seconds: 8),
+    receiveTimeout: const Duration(seconds: 15),
     headers: {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
@@ -132,11 +151,61 @@ class YouTubeExtractorService {
     return inputUrl.trim();
   }
 
-  /// Checks if a string is a valid YouTube URL
+  /// Checks if a string is a YouTube playlist URL
+  static bool isPlaylistUrl(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return false;
+    final uri = Uri.tryParse(
+        trimmed.startsWith('http') ? trimmed : 'https://$trimmed');
+    if (uri == null) return false;
+    final list = uri.queryParameters['list'];
+    if (list != null && list.startsWith('RD')) {
+      return false;
+    }
+    if (list != null && list.isNotEmpty) {
+      return true;
+    }
+    return uri.path.contains('playlist');
+  }
+
+  /// Extracts the playlist ID from a YouTube playlist URL
+  static String? extractPlaylistId(String input) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return null;
+    final uri = Uri.tryParse(
+        trimmed.startsWith('http') ? trimmed : 'https://$trimmed');
+    if (uri != null) {
+      final list = uri.queryParameters['list'];
+      if (list != null && list.isNotEmpty && !list.startsWith('RD')) {
+        return list;
+      }
+    }
+    final match = RegExp(r'[?&]list=([a-zA-Z0-9_\-]+)').firstMatch(trimmed);
+    if (match != null &&
+        match.group(1) != null &&
+        !match.group(1)!.startsWith('RD')) {
+      return match.group(1);
+    }
+    return null;
+  }
+
+  /// Format duration into mm:ss or hh:mm:ss for long audio/video tracks
+  static String formatDuration(Duration duration) {
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes % 60;
+    final seconds = duration.inSeconds % 60;
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+    return '${duration.inMinutes}:${seconds.toString().padLeft(2, '0')}';
+  }
+
+  /// Checks if a string is a valid YouTube URL (video or playlist)
   static bool isYouTubeUrl(String input) {
     final trimmed = input.trim();
     if (trimmed.isEmpty) return false;
     if (extractVideoId(trimmed) != null) return true;
+    if (isPlaylistUrl(trimmed)) return true;
     if (youtubeRegex.hasMatch(trimmed)) return true;
     final sanitized = sanitizeYouTubeLink(trimmed);
     return youtubeRegex.hasMatch(sanitized);
@@ -263,12 +332,90 @@ class YouTubeExtractorService {
       list.add(envUrl.trim().replaceAll(RegExp(r'\/$'), ''));
     }
     list.addAll([
-      'https://player-wwrc.onrender.com', // Live Cloud Production URL (Render)
       'http://localhost:3000', // Local ADB fallback
       'http://127.0.0.1:3000',
       'http://10.0.2.2:3000', // Android Emulator fallback
+      'https://player-wwrc.onrender.com', // Live Cloud Production URL (Render)
     ]);
     return list.toSet().toList();
+  }
+
+  /// Extracts YouTube playlist metadata and full list of tracks
+  Future<YouTubePlaylistResult?> extractPlaylistWithTracks(
+    String url, {
+    int limit = 50,
+  }) async {
+    final trimmedUrl = url.trim();
+    if (!isPlaylistUrl(trimmedUrl) && !isYouTubeUrl(trimmedUrl)) {
+      return null;
+    }
+    final playlistId = extractPlaylistId(trimmedUrl) ?? trimmedUrl;
+
+    debugPrint(
+        '[YouTubeExtractor] 📋 Extracting YouTube playlist: $trimmedUrl (ID: $playlistId)');
+
+    for (final ep in _candidateEndpoints) {
+      try {
+        final response = await _dio.post(
+          '$ep/api/youtube/playlist',
+          data: {'url': trimmedUrl, 'limit': limit},
+        );
+
+        if (response.statusCode == 200 && response.data != null) {
+          final data = response.data is String
+              ? jsonDecode(response.data)
+              : response.data;
+          final map = Map<String, dynamic>.from(data as Map);
+
+          final tracksRaw = map['tracks'] as List? ?? [];
+          final tracks = <SongModel>[];
+
+          for (final t in tracksRaw) {
+            if (t is Map) {
+              final tMap = Map<String, dynamic>.from(t);
+              final vid = tMap['id']?.toString() ?? '';
+              if (vid.isEmpty) continue;
+
+              final durationSec = (tMap['duration'] as num?)?.toInt() ?? 0;
+              final trackUrl = tMap['url']?.toString() ??
+                  'https://www.youtube.com/watch?v=$vid';
+
+              tracks.add(SongModel(
+                id: 'yt_$vid',
+                title: tMap['title']?.toString() ?? 'YouTube Audio',
+                artist: tMap['artist']?.toString() ??
+                    map['channel']?.toString() ??
+                    'YouTube',
+                album: map['title']?.toString() ?? 'YouTube Playlist',
+                albumArt: tMap['thumbnailUrl']?.toString() ??
+                    'https://i.ytimg.com/vi/$vid/hqdefault.jpg',
+                duration: Duration(seconds: durationSec),
+                previewUrl: null, // Resolved on-demand when played
+                youtubeUrl: trackUrl,
+                isYoutubeImport: true,
+              ));
+            }
+          }
+
+          if (tracks.isNotEmpty) {
+            _cachedWorkingEndpoint = ep;
+            return YouTubePlaylistResult(
+              id: map['id']?.toString() ?? playlistId,
+              title: map['title']?.toString() ?? 'YouTube Playlist',
+              channel: map['channel']?.toString(),
+              thumbnailUrl:
+                  map['thumbnailUrl']?.toString() ?? tracks.first.albumArt,
+              trackCount:
+                  (map['trackCount'] as num?)?.toInt() ?? tracks.length,
+              tracks: tracks,
+            );
+          }
+        }
+      } catch (e) {
+        debugPrint('[YouTubeExtractor] ⚠️ Playlist query to $ep failed: $e');
+      }
+    }
+    return null;
   }
 
   /// Legacy helper returning Song directly
@@ -284,6 +431,17 @@ class YouTubeExtractorService {
     bool forceRefresh = false,
   }) async {
     final trimmedUrl = url.trim();
+    if (isPlaylistUrl(trimmedUrl)) {
+      final playlist = await extractPlaylistWithTracks(trimmedUrl, limit: 10);
+      if (playlist != null && playlist.tracks.isNotEmpty) {
+        final firstTrack = playlist.tracks.first;
+        if (firstTrack.youtubeUrl != null) {
+          return extractTrackWithFormats(firstTrack.youtubeUrl!,
+              forceRefresh: forceRefresh);
+        }
+      }
+    }
+
     final sanitizedUrl = enforceStrictVideoUrl(trimmedUrl);
     if (!isYouTubeUrl(trimmedUrl) && !isYouTubeUrl(sanitizedUrl)) {
       debugPrint('[YouTubeExtractor] ❌ Invalid YouTube URL: "$trimmedUrl"');

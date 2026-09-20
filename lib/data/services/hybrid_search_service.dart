@@ -43,9 +43,19 @@ class HybridSearchService {
     final cleanQuery = query.trim().toLowerCase();
     if (cleanQuery.isEmpty) return {};
 
-    // 0. URL Regex Interceptor: If user typed or pasted YouTube URL, extract single track
+    // 0. URL Regex Interceptor: If user typed or pasted YouTube URL, extract single track or playlist
     if (YouTubeExtractorService.isYouTubeUrl(query)) {
       debugPrint('[Autocomplete] 🎯 Intercepted YouTube URL: "$query"');
+      if (YouTubeExtractorService.isPlaylistUrl(query)) {
+        final playlist = await _ytExtractor.extractPlaylistWithTracks(query, limit: 10);
+        if (playlist != null && playlist.tracks.isNotEmpty) {
+          return {
+            'songs': playlist.tracks,
+            'albums': [],
+            'artists': [],
+          };
+        }
+      }
       final ytSong = await _ytExtractor.extractTrack(query);
       if (ytSong != null) {
         return {
@@ -177,6 +187,13 @@ class HybridSearchService {
     // 0. URL Regex Interceptor: If user entered or pasted a YouTube URL, extract directly
     if (YouTubeExtractorService.isYouTubeUrl(rawQuery)) {
       debugPrint('[HybridSearch] 🎯 Intercepted YouTube URL: "$rawQuery"');
+      if (YouTubeExtractorService.isPlaylistUrl(rawQuery)) {
+        final playlist = await _ytExtractor.extractPlaylistWithTracks(rawQuery, limit: limit);
+        if (playlist != null && playlist.tracks.isNotEmpty) {
+          debugPrint('[HybridSearch] ✅ Returning ${playlist.tracks.length} tracks from playlist: "${playlist.title}"');
+          return playlist.tracks;
+        }
+      }
       final ytSong = await _ytExtractor.extractTrack(rawQuery);
       if (ytSong != null) {
         debugPrint('[HybridSearch] ✅ Returning extracted YouTube track: "${ytSong.title}"');

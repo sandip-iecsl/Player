@@ -37,6 +37,7 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
   double _downloadProgress = 0.0;
   String? _errorMessage;
   Song? _extractedSong;
+  YouTubePlaylistResult? _extractedPlaylist;
   List<YouTubeAudioFormat> _availableFormats = [];
   YouTubeAudioFormat? _selectedFormat;
   String _preferredQuality = 'High';
@@ -107,6 +108,7 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
         _errorMessage =
             'Please enter a valid YouTube, YouTube Music, or youtu.be link';
         _extractedSong = null;
+        _extractedPlaylist = null;
         _availableFormats = [];
         _selectedFormat = null;
       });
@@ -115,10 +117,54 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
 
     if (_isExtracting) return;
 
+    // Check if link is a YouTube playlist
+    final isPlaylist = YouTubeExtractorService.isPlaylistUrl(trimmed) ||
+        YouTubeExtractorService.isPlaylistUrl(sanitized);
+
+    if (isPlaylist) {
+      setState(() {
+        _isExtracting = true;
+        _errorMessage = null;
+        _extractedSong = null;
+        _extractedPlaylist = null;
+        _availableFormats = [];
+        _selectedFormat = null;
+      });
+
+      try {
+        final playlist = await _extractor.extractPlaylistWithTracks(trimmed);
+        if (mounted) {
+          if (playlist != null && playlist.tracks.isNotEmpty) {
+            setState(() {
+              _extractedPlaylist = playlist;
+              _isExtracting = false;
+            });
+            return;
+          } else {
+            setState(() {
+              _errorMessage =
+                  'Could not extract playlist tracks. Make sure the playlist is public or unlisted.';
+              _isExtracting = false;
+            });
+            return;
+          }
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _errorMessage = 'Playlist extraction error: $e';
+            _isExtracting = false;
+          });
+          return;
+        }
+      }
+    }
+
     setState(() {
       _isExtracting = true;
       _errorMessage = null;
       _extractedSong = null;
+      _extractedPlaylist = null;
       _availableFormats = [];
       _selectedFormat = null;
     });
@@ -156,6 +202,22 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
           _isExtracting = false;
         });
       }
+    }
+  }
+
+  Future<void> _playPlaylist() async {
+    if (_extractedPlaylist == null || _extractedPlaylist!.tracks.isEmpty) return;
+    Navigator.of(context, rootNavigator: true).pop();
+    try {
+      debugPrint(
+          '[ImportLinkModal] 🎵 Playing imported playlist: ${_extractedPlaylist!.title} (${_extractedPlaylist!.tracks.length} tracks)');
+      await ref.read(audioServiceProvider).loadQueue(
+            _extractedPlaylist!.tracks,
+            context: PlaybackContext.search,
+            contextId: _extractedPlaylist!.title,
+          );
+    } catch (e) {
+      debugPrint('[ImportLinkModal] ❌ Playlist playback error: $e');
     }
   }
 
@@ -275,9 +337,7 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
   }
 
   String _formatDuration(Duration duration) {
-    final minutes = duration.inMinutes;
-    final seconds = duration.inSeconds % 60;
-    return '$minutes:${seconds.toString().padLeft(2, '0')}';
+    return YouTubeExtractorService.formatDuration(duration);
   }
 
   @override
@@ -404,6 +464,7 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                           _urlController.clear();
                           setState(() {
                             _extractedSong = null;
+                            _extractedPlaylist = null;
                             _errorMessage = null;
                             _availableFormats = [];
                             _selectedFormat = null;
@@ -487,6 +548,154 @@ class _ImportLinkModalState extends ConsumerState<ImportLinkModal> {
                     ],
                   ),
                 ),
+
+              // Extracted playlist preview card
+              if (_extractedPlaylist != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF1E1E26),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: Colors.redAccent.withAlpha(50)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Container(
+                              width: 60,
+                              height: 60,
+                              color: Colors.black26,
+                              child: _extractedPlaylist!.thumbnailUrl != null
+                                  ? Image.network(
+                                      _extractedPlaylist!.thumbnailUrl!,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => const Icon(
+                                          Icons.queue_music_rounded,
+                                          color: Colors.redAccent),
+                                    )
+                                  : const Icon(Icons.queue_music_rounded,
+                                      color: Colors.redAccent),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _extractedPlaylist!.title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _extractedPlaylist!.channel ??
+                                      'YouTube Playlist',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white60,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.redAccent.withAlpha(35),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    '${_extractedPlaylist!.tracks.length} tracks',
+                                    style: const TextStyle(
+                                      color: Colors.redAccent,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      const Divider(color: Colors.white12, height: 1),
+                      const SizedBox(height: 8),
+                      ...(_extractedPlaylist!.tracks.take(3).map((track) =>
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.music_note,
+                                    size: 14, color: Colors.white38),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    track.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        color: Colors.white70, fontSize: 12),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _formatDuration(track.duration),
+                                  style: const TextStyle(
+                                      color: Colors.white38, fontSize: 11),
+                                ),
+                              ],
+                            ),
+                          ))),
+                      if (_extractedPlaylist!.tracks.length > 3)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            '+ ${_extractedPlaylist!.tracks.length - 3} more tracks',
+                            style: const TextStyle(
+                                color: Colors.white38,
+                                fontSize: 11,
+                                fontStyle: FontStyle.italic),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14)),
+                      elevation: 4,
+                      shadowColor: Colors.redAccent.withAlpha(100),
+                    ),
+                    icon: const Icon(Icons.play_arrow_rounded, size: 22),
+                    label: Text(
+                      'Play Entire Playlist (${_extractedPlaylist!.tracks.length} Tracks)',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.bold, fontSize: 14),
+                    ),
+                    onPressed: _playPlaylist,
+                  ),
+                ),
+                const SizedBox(height: 12),
+              ],
 
               // Extracted song preview card
               if (_extractedSong != null) ...[

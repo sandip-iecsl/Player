@@ -4,6 +4,7 @@
   "description": "High-performance low-latency YouTube audio stream extraction and download microservice for Aura Player",
   "main": "server.js",
   "scripts": {
+    "postinstall": "node install_ytdlp.js",
     "test": "node --test",
     "start": "node server.js",
     "dev": "nodemon server.js"
