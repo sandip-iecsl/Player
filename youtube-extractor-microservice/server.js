@@ -33,10 +33,19 @@ async function getInnerTube() {
   if (!innerTubeClient) {
     try {
       const { Innertube, UniversalCache } = require('youtubei.js');
+      let cookieContent = null;
+      if (cookiePath && fileIsReadable(cookiePath)) {
+        try {
+          cookieContent = fs.readFileSync(cookiePath, 'utf8').trim();
+        } catch (_) {}
+      }
       innerTubeClient = await Innertube.create({
         cache: new UniversalCache(false),
+        generate_session_locally: true,
+        client_type: 'ANDROID',
+        cookie: cookieContent || undefined,
       });
-      console.log('[Microservice] ⚡ Innertube engine initialized successfully');
+      console.log('[Microservice] ⚡ Innertube engine (ANDROID client) initialized successfully');
     } catch (err) {
       console.warn('[Microservice] ⚠️ Innertube initialization warning:', err.message);
     }
@@ -192,8 +201,16 @@ function estimateSizeMb(bitrateKbps, durationSec) {
 async function resolveWithInnerTube(videoId, targetUrl) {
   try {
     const yt = await getInnerTube();
-    if (!yt) return null;
-    const info = await yt.getBasicInfo(videoId);
+    let info = null;
+    try {
+      info = await yt.getBasicInfo(videoId, 'ANDROID');
+    } catch (_) {
+      try {
+        info = await yt.getBasicInfo(videoId, 'TV');
+      } catch (_) {
+        info = await yt.getBasicInfo(videoId);
+      }
+    }
     if (!info || !info.basic_info) return null;
 
     const rawTitle = info.basic_info.title || 'YouTube Audio';
@@ -332,8 +349,25 @@ function isReadableAudioFile(filePath) {
   }
 }
 
+let ytmusicapiVerified = null;
+function checkYtMusicApi() {
+  if (ytmusicapiVerified !== null) return ytmusicapiVerified;
+  if (!fs.existsSync(YTMUSIC_BRIDGE)) {
+    ytmusicapiVerified = false;
+    return false;
+  }
+  try {
+    const { execFileSync } = require('child_process');
+    execFileSync(PYTHON_BIN, ['-c', 'import ytmusicapi'], { stdio: 'ignore', timeout: 3000 });
+    ytmusicapiVerified = true;
+  } catch (_) {
+    ytmusicapiVerified = false;
+  }
+  return ytmusicapiVerified;
+}
+
 function queryYtMusic(operation, ...args) {
-  if (!fs.existsSync(YTMUSIC_BRIDGE)) return null;
+  if (!checkYtMusicApi()) return null;
   try {
     const output = execFileSync(PYTHON_BIN, [YTMUSIC_BRIDGE, operation, ...args], {
       encoding: 'utf8',
@@ -342,12 +376,10 @@ function queryYtMusic(operation, ...args) {
     });
     const payload = JSON.parse(output);
     if (payload.error) {
-      console.warn(`[YouTube Music API] ${operation} failed: ${payload.error}: ${payload.message || 'unknown error'}`);
       return null;
     }
     return payload;
-  } catch (error) {
-    console.warn(`[YouTube Music API] ${operation} unavailable: ${error.message}`);
+  } catch (_) {
     return null;
   }
 }

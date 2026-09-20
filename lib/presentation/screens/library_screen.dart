@@ -321,8 +321,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => WillPopScope(
-          onWillPop: () async => !isVerifying,
+        builder: (ctx, setDialogState) => PopScope(
+          canPop: !isVerifying,
           child: AlertDialog(
             backgroundColor: AppColors.deepSpaceBlackLight,
             title: Text(

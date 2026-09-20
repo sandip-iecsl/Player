@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'package:dio/dio.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/foundation.dart';
@@ -66,8 +67,8 @@ class YouTubeExtractorService {
   YouTubeExtractorService._internal();
 
   final Dio _dio = Dio(BaseOptions(
-    connectTimeout: const Duration(seconds: 8),
-    receiveTimeout: const Duration(seconds: 15),
+    connectTimeout: const Duration(seconds: 10),
+    receiveTimeout: const Duration(seconds: 25),
     headers: {
       'Accept': 'application/json',
       'Content-Type': 'application/json',
@@ -324,19 +325,24 @@ class YouTubeExtractorService {
   /// Candidate microservice endpoint URLs (Cloud Production URL + Local ADB fallbacks)
   List<String> get _candidateEndpoints {
     final list = <String>[];
-    if (_cachedWorkingEndpoint != null) {
-      list.add(_cachedWorkingEndpoint!);
-    }
     final envUrl = dotenv.env['YOUTUBE_EXTRACTOR_API_URL'];
     if (envUrl != null && envUrl.trim().isNotEmpty) {
       list.add(envUrl.trim().replaceAll(RegExp(r'\/$'), ''));
     }
-    list.addAll([
-      'http://localhost:3000', // Local ADB fallback
-      'http://127.0.0.1:3000',
-      'http://10.0.2.2:3000', // Android Emulator fallback
-      'https://player-wwrc.onrender.com', // Live Cloud Production URL (Render)
-    ]);
+    if (_cachedWorkingEndpoint != null) {
+      list.add(_cachedWorkingEndpoint!);
+    }
+    list.add('https://player-wwrc.onrender.com'); // Live Cloud Production URL (Render)
+
+    // Local fallbacks: Only query localhost on Desktop or Android Emulator
+    if (!kIsWeb) {
+      if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+        list.add('http://localhost:3000');
+        list.add('http://127.0.0.1:3000');
+      } else if (Platform.isAndroid && kDebugMode) {
+        list.add('http://10.0.2.2:3000'); // Android Emulator fallback
+      }
+    }
     return list.toSet().toList();
   }
 

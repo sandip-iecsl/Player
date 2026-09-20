@@ -3,9 +3,20 @@ const path = require('path');
 const https = require('https');
 const { execSync } = require('child_process');
 
+function installPythonDependencies() {
+  try {
+    console.log('[PostInstall] Attempting to install ytmusicapi for Python...');
+    execSync('python3 -m pip install ytmusicapi --no-cache-dir || pip3 install ytmusicapi --no-cache-dir || pip install ytmusicapi --no-cache-dir', { stdio: 'ignore', timeout: 45000 });
+    console.log('[PostInstall] Successfully verified/installed ytmusicapi.');
+  } catch (e) {
+    console.warn('[PostInstall] Notice: Python ytmusicapi pip setup warning:', e.message);
+  }
+}
+
 // Only download on Linux / Render platforms (Windows repo already has yt-dlp.exe)
 if (process.platform === 'win32') {
   console.log('[PostInstall] Windows platform detected — using local yt-dlp.exe');
+  installPythonDependencies();
   process.exit(0);
 }
 
@@ -15,10 +26,12 @@ if (fs.existsSync(targetPath)) {
   try {
     fs.chmodSync(targetPath, 0o755);
     console.log('[PostInstall] yt-dlp already present and executable at', targetPath);
+    installPythonDependencies();
     process.exit(0);
   } catch (_) {}
 }
 
+installPythonDependencies();
 console.log('[PostInstall] Downloading Linux yt-dlp standalone binary...');
 
 function downloadBinary(url, dest, callback) {

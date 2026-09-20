@@ -132,14 +132,20 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
         min(currentPosition.inSeconds.toDouble(), actualMaxDuration);
     final safeValue = max(0.0, currentValue);
 
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        statusBarIconBrightness:
-            themeMode == ThemeMode.light ? Brightness.dark : Brightness.light,
-        systemNavigationBarColor: Colors.transparent,
-      ),
-      child: Scaffold(
+    return PopScope(
+      canPop: !widget.isOpen,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        widget.onClose();
+      },
+      child: AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness:
+              themeMode == ThemeMode.light ? Brightness.dark : Brightness.light,
+          systemNavigationBarColor: Colors.transparent,
+        ),
+        child: Scaffold(
         backgroundColor: _backgroundColor ?? AppColors.deepSpaceBlack,
         body: Stack(
           children: [
@@ -1337,8 +1343,9 @@ class _FullPlayerState extends ConsumerState<FullPlayer> {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   String _formatDuration(Duration duration) {
     if (duration.isNegative) duration = Duration.zero;

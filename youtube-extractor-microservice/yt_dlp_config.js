@@ -47,6 +47,7 @@ function buildYtDlpArgs({ format, dumpJson = false, getUrl = false, noPlaylist =
     '--no-warnings',
     ...(noPlaylist ? ['--no-playlist'] : []),
     '--no-check-certificates',
+    '--extractor-args', 'youtube:player_client=android,web',
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     ...(format ? ['-f', format] : []),
     ...(outputPath ? ['-o', outputPath] : []),
@@ -68,6 +69,7 @@ function diagnostics() {
   const nodeVersion = process.versions.node;
   const jsRuntimeVersion = readCommandVersion(JS_RUNTIME, ['--version']);
   const pythonVersion = readCommandVersion(PYTHON_BIN, ['--version']);
+  const isYtMusicApiInstalled = fs.existsSync(YTMUSIC_BRIDGE) && readCommandVersion(PYTHON_BIN, ['-c', 'import ytmusicapi; print("ok")']) === 'ok';
   return {
     nodeVersion,
     pythonVersion,
@@ -75,7 +77,7 @@ function diagnostics() {
     denoVersion: readCommandVersion('deno', ['--version']),
     jsRuntime: JS_RUNTIME,
     jsRuntimeVersion,
-    ytmusicapiConfigured: fs.existsSync(YTMUSIC_BRIDGE),
+    ytmusicapiConfigured: isYtMusicApiInstalled,
     ytmusicapiPython: PYTHON_BIN,
     ejsConfigured: true,
     jsRuntimeConfigured: Boolean(jsRuntimeVersion),

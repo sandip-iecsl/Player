@@ -164,7 +164,12 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
   Future<void> _handleBackPress() async {
     // 1. If full player panel is open or sliding, collapse it back to current screen
     try {
-      if (_isPanelOpen || (_panelController.isAttached && (_panelController.isPanelOpen || _panelController.isPanelShown))) {
+      final isPanelActive = _isPanelOpen ||
+          (_panelController.isAttached &&
+              (_panelController.isPanelOpen ||
+                  _panelController.isPanelAnimating ||
+                  _panelController.panelPosition > 0.05));
+      if (isPanelActive) {
         _lastBackPressTime = null;
         if (_panelController.isAttached) {
           await _panelController.close();
@@ -193,14 +198,7 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
       return;
     }
 
-    // 4. Check if global root modal/dialog stack can pop
-    if (navigatorKey.currentState != null && navigatorKey.currentState!.canPop()) {
-      _lastBackPressTime = null;
-      navigatorKey.currentState!.pop();
-      return;
-    }
-
-    // 5. Pop and navigate back through tab history (e.g. Settings -> Library -> Search -> Home)
+    // 4. Pop and navigate back through tab history (e.g. Local -> Library -> Search -> Home)
     if (_tabHistory.length > 1) {
       _lastBackPressTime = null;
       setState(() {
@@ -230,6 +228,7 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
     if (_lastBackPressTime == null || now.difference(_lastBackPressTime!) > const Duration(seconds: 2)) {
       _lastBackPressTime = now;
       if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: const Row(
@@ -249,7 +248,7 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
       return;
     }
 
-    // Exit application
+    // Exit application only after double-tap confirmation on Home root
     SystemNavigator.pop();
   }
 
@@ -460,8 +459,8 @@ class _MainScreenState extends ConsumerState<MainScreen> with WidgetsBindingObse
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => WillPopScope(
-        onWillPop: () async => false,
+      builder: (ctx) => PopScope(
+        canPop: false,
         child: AlertDialog(
           backgroundColor: AppColors.deepSpaceBlackLight,
           title: const Text('Welcome to Aura', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
@@ -514,9 +513,19 @@ class _TabNavigator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Navigator(
-      key: navigatorKey,
-      onGenerateRoute: (settings) => MaterialPageRoute(builder: (context) => root),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        final nav = navigatorKey.currentState;
+        if (nav != null && nav.canPop()) {
+          nav.pop();
+        }
+      },
+      child: Navigator(
+        key: navigatorKey,
+        onGenerateRoute: (settings) => MaterialPageRoute(builder: (context) => root),
+      ),
     );
   }
 }
