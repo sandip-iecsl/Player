@@ -7,6 +7,12 @@
 .dart_tool/
 build/
 
+# Android local configuration and caches
+android/local.properties
+android/.gradle/
+.gradle/
+*.dill
+
 # Node dependencies and local service files
 node_modules/
 youtube-extractor-microservice/node_modules/
