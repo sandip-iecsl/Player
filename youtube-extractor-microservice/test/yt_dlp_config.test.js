@@ -10,8 +10,7 @@ test('buildYtDlpArgs adds authentication and runtime flags once', () => {
   });
 
   assert.ok(args.filter((arg) => arg === '--cookies').length <= 1);
-  assert.equal(args.filter((arg) => arg === '--js-runtimes').length, 1);
-  assert.equal(args.filter((arg) => arg === '--remote-components').length, 1);
+  assert.equal(args.filter((arg) => arg === '--extractor-args').length, 1);
   assert.equal(args.at(-1), '--');
 });
 

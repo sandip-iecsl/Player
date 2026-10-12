@@ -1,4 +1,4 @@
-﻿node_modules
+node_modules
 npm-debug.log
 .env
 .env.local
@@ -11,5 +11,6 @@ yt-dlp
 .git
 .gitignore
 test_live_backend.js
-1788798105905-player-script.js
-1788798105911-player-script.js
+*-player-script.js
+aura-*
+

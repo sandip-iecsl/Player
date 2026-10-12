@@ -6,3 +6,5 @@ yt-dlp.exe
 yt-dlp
 *.log
 .DS_Store
+*-player-script.js
+aura-*

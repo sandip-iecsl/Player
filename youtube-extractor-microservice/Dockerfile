@@ -41,7 +41,7 @@ ENV PORT=3000
 ENV NODE_ENV=production
 ENV YTDLP_JS_RUNTIME=/usr/local/bin/deno
 
-# Healthcheck so Render marks service healthy
+# Container healthcheck
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD curl -f http://localhost:3000/health || exit 1
 

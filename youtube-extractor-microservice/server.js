@@ -24,10 +24,186 @@ process.on('unhandledRejection', (reason) => {
   console.error('[Process] Unhandled rejection:', reason);
 });
 
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+
 const app = express();
 const PORT = process.env.PORT || 3000;
-app.use(cors());
-app.use(express.json());
+
+// Production Security Headers via Helmet
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginEmbedderPolicy: false,
+}));
+
+// Configurable CORS
+const allowedOrigins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',').map(s => s.trim()) : '*';
+app.use(cors({
+  origin: (origin, cb) => {
+    if (allowedOrigins === '*' || !origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*')) {
+      return cb(null, true);
+    }
+    return cb(new Error('CORS origin denied'));
+  },
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Range'],
+  exposedHeaders: ['Content-Range', 'Content-Length', 'Accept-Ranges', 'Content-Disposition'],
+}));
+
+app.use(express.json({ limit: '2mb' }));
+
+// Global Rate Limiter
+const generalLimiter = rateLimit({
+  windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 60 * 1000,
+  max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'TOO_MANY_REQUESTS', message: 'Rate limit exceeded. Please retry shortly.' },
+  skip: (req) => req.path === '/health' || req.path === '/ready',
+});
+app.use(generalLimiter);
+
+// Endpoint-specific Rate Limiters
+const extractLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: parseInt(process.env.EXTRACT_RATE_LIMIT_MAX, 10) || 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'TOO_MANY_REQUESTS', message: 'Extraction rate limit exceeded.' },
+});
+
+const downloadLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: parseInt(process.env.DOWNLOAD_RATE_LIMIT_MAX, 10) || 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'TOO_MANY_REQUESTS', message: 'Download rate limit exceeded.' },
+});
+
+// LRU/TTL In-Memory Cache
+class SimpleTtlCache {
+  constructor(maxItems = 1000, defaultTtlMs = 30 * 60 * 1000) {
+    this.maxItems = maxItems;
+    this.defaultTtlMs = defaultTtlMs;
+    this.cache = new Map();
+    this.stats = { hits: 0, misses: 0 };
+  }
+
+  get(key) {
+    if (!key) return null;
+    const entry = this.cache.get(key);
+    if (!entry) {
+      this.stats.misses++;
+      return null;
+    }
+    if (Date.now() > entry.expiresAt) {
+      this.cache.delete(key);
+      this.stats.misses++;
+      return null;
+    }
+    this.stats.hits++;
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    return entry.value;
+  }
+
+  set(key, value, ttlMs = this.defaultTtlMs) {
+    if (!key || !value) return;
+    if (this.cache.size >= this.maxItems) {
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey !== undefined) this.cache.delete(firstKey);
+    }
+    this.cache.set(key, {
+      value,
+      expiresAt: Date.now() + ttlMs,
+    });
+  }
+
+  size() {
+    return this.cache.size;
+  }
+
+  clear() {
+    this.cache.clear();
+  }
+}
+
+const extractCache = new SimpleTtlCache(1000, 30 * 60 * 1000); // 30 mins
+const playlistCache = new SimpleTtlCache(200, 15 * 60 * 1000); // 15 mins
+const searchCache = new SimpleTtlCache(500, 15 * 60 * 1000);   // 15 mins
+
+// Concurrency Queue Controller for heavy process executions
+class ConcurrencyLimiter {
+  constructor(maxConcurrent = 8) {
+    this.maxConcurrent = maxConcurrent;
+    this.currentActive = 0;
+    this.queue = [];
+  }
+
+  run(fn) {
+    return new Promise((resolve, reject) => {
+      const execute = () => {
+        this.currentActive++;
+        let settled = false;
+        const done = (err, result) => {
+          if (settled) return;
+          settled = true;
+          this.currentActive--;
+          if (this.queue.length > 0) {
+            const next = this.queue.shift();
+            next();
+          }
+          if (err) reject(err);
+          else resolve(result);
+        };
+
+        try {
+          fn(done);
+        } catch (e) {
+          done(e);
+        }
+      };
+
+      if (this.currentActive < this.maxConcurrent) {
+        execute();
+      } else {
+        this.queue.push(execute);
+      }
+    });
+  }
+
+  get active() {
+    return this.currentActive;
+  }
+
+  get queued() {
+    return this.queue.length;
+  }
+}
+
+const ytdlpLimiter = new ConcurrencyLimiter(parseInt(process.env.MAX_CONCURRENT_YTDLP, 10) || 8);
+
+// Automated Stale Temporary File Sweeper
+function cleanOldTempFiles() {
+  try {
+    const tmpDir = os.tmpdir();
+    const files = fs.readdirSync(tmpDir);
+    const now = Date.now();
+    for (const file of files) {
+      if (file.startsWith('aura-')) {
+        const fullPath = path.join(tmpDir, file);
+        try {
+          const stat = fs.statSync(fullPath);
+          if (now - stat.mtimeMs > 20 * 60 * 1000) {
+            fs.unlinkSync(fullPath);
+          }
+        } catch (_) {}
+      }
+    }
+  } catch (_) {}
+}
+setInterval(cleanOldTempFiles, 15 * 60 * 1000).unref();
 
 // Initialize Innertube (pure Node.js YouTube client) as resilient fallback engine
 let innerTubeClient = null;
@@ -390,16 +566,44 @@ function queryYtMusic(operation, ...args) {
 }
 
 /**
- * Health check
+ * Health & Readiness Probes
  */
 app.get('/health', (req, res) => {
+  const mem = process.memoryUsage();
   res.json({
     status: 'online',
     service: 'Aura Player YouTube Extractor Microservice',
     engine: `yt-dlp (${YTDLP_BIN})`,
     ...runtimeDiagnostics,
+    metrics: {
+      uptimeSec: Math.round(process.uptime()),
+      rssMb: (mem.rss / (1024 * 1024)).toFixed(1),
+      heapUsedMb: (mem.heapUsed / (1024 * 1024)).toFixed(1),
+      activeWorkers: ytdlpLimiter.active,
+      queuedWorkers: ytdlpLimiter.queued,
+    },
+    cache: {
+      extractsCached: extractCache.size(),
+      playlistsCached: playlistCache.size(),
+      searchesCached: searchCache.size(),
+      hits: extractCache.stats.hits + playlistCache.stats.hits + searchCache.stats.hits,
+      misses: extractCache.stats.misses + playlistCache.stats.misses + searchCache.stats.misses,
+    },
     supportedQualities: ['High (320 kbps)', 'Medium (128 kbps)', 'Data Saver (64 kbps)'],
     timestamp: new Date().toISOString()
+  });
+});
+
+app.get('/ready', (req, res) => {
+  const isYtDlpAvailable = fs.existsSync(YTDLP_BIN);
+  if (!isYtDlpAvailable) {
+    return res.status(503).json({ ready: false, reason: 'yt-dlp binary missing' });
+  }
+  return res.json({
+    ready: true,
+    uptimeSec: Math.round(process.uptime()),
+    activeWorkers: ytdlpLimiter.active,
+    queuedWorkers: ytdlpLimiter.queued,
   });
 });
 
@@ -407,7 +611,7 @@ app.get('/health', (req, res) => {
  * MODULE 1 - Endpoint 1: POST /api/youtube/extract
  * Extracts audio streams, metadata, and standardized Multi-Format Quality Tiers
  */
-app.post('/api/youtube/extract', async (req, res) => {
+app.post('/api/youtube/extract', extractLimiter, async (req, res) => {
   try {
     const { url } = req.body;
 
@@ -424,6 +628,14 @@ app.post('/api/youtube/extract', async (req, res) => {
     const videoId = extractVideoId(cleanUrl) || extractVideoId(trimmedUrl);
     const targetUrl = videoId ? `https://www.youtube.com/watch?v=${videoId}` : cleanUrl;
 
+    if (videoId) {
+      const cached = extractCache.get(videoId);
+      if (cached) {
+        console.log(`[Extractor] ⚡ Cache HIT for ${videoId} ("${cached.title}")`);
+        return res.json(cached);
+      }
+    }
+
     console.log(`[Extractor] 🔍 Resolving multi-format audio streams with yt-dlp for: ${targetUrl} (ID: ${videoId})`);
 
     const rawYtMusic = videoId ? queryYtMusic('song', videoId) : null;
@@ -436,7 +648,11 @@ app.post('/api/youtube/extract', async (req, res) => {
     });
     ytDlpArgs.push(targetUrl);
 
-    execFile(YTDLP_BIN, ytDlpArgs, { maxBuffer: 100 * 1024 * 1024, timeout: 60000 }, async (error, stdout, stderr) => {
+    ytdlpLimiter.run((done) => {
+      execFile(YTDLP_BIN, ytDlpArgs, { maxBuffer: 100 * 1024 * 1024, timeout: 60000 }, (error, stdout, stderr) => {
+        done(null, { error, stdout, stderr });
+      });
+    }).then(async ({ error, stdout, stderr }) => {
       if (!error && stdout) {
         try {
           const info = JSON.parse(stdout);
@@ -521,6 +737,7 @@ app.post('/api/youtube/extract', async (req, res) => {
           };
 
           console.log(`[Extractor] ✅ Multi-format resolved for "${payloadResponse.title}" (${availableFormats.length} quality tiers)`);
+          if (videoId) extractCache.set(videoId, payloadResponse);
           return res.json(payloadResponse);
         } catch (parseErr) {
           console.warn(`[Extractor] ⚠️ yt-dlp json parse warning: ${parseErr.message}`);
@@ -529,11 +746,12 @@ app.post('/api/youtube/extract', async (req, res) => {
 
       console.warn(`[Extractor] ⚠️ yt-dlp failed or timed out (${error?.message || stderr}). Trying Innertube engine fallback...`);
 
-      // Strategy 2: In-Process Pure JS Innertube Engine (solves ENOENT and bot challenges on Render)
+      // Strategy 2: In-Process Pure JS Innertube Engine (client resilience fallback)
       try {
         const innerTubeResult = await resolveWithInnerTube(videoId, targetUrl);
         if (innerTubeResult) {
           console.log(`[Extractor] ⚡ Resolved via Innertube for "${innerTubeResult.title}"`);
+          if (videoId) extractCache.set(videoId, innerTubeResult);
           return res.json(innerTubeResult);
         }
       } catch (innerErr) {
@@ -597,6 +815,7 @@ app.post('/api/youtube/extract', async (req, res) => {
               };
 
               console.log(`[Extractor] ⚡ Resolved via Piped instance (${instance.url}) for "${title}"`);
+              if (videoId) extractCache.set(videoId, payloadResponse);
               return res.json(payloadResponse);
             }
           } else if (instance.type === 'invidious') {
@@ -643,6 +862,7 @@ app.post('/api/youtube/extract', async (req, res) => {
                 };
 
                 console.log(`[Extractor] ⚡ Resolved via Invidious instance (${instance.url}) for "${title}"`);
+                if (videoId) extractCache.set(videoId, payloadResponse);
                 return res.json(payloadResponse);
               }
             }
@@ -669,7 +889,7 @@ app.post('/api/youtube/extract', async (req, res) => {
  * MODULE 1 - Endpoint 1B: POST /api/youtube/playlist
  * Extracts playlist items, titles, durations, thumbnails, and canonical video IDs
  */
-app.post('/api/youtube/playlist', async (req, res) => {
+app.post('/api/youtube/playlist', extractLimiter, async (req, res) => {
   try {
     const { url } = req.body;
     if (!url || typeof url !== 'string') {
@@ -679,6 +899,12 @@ app.post('/api/youtube/playlist', async (req, res) => {
     const playlistId = extractPlaylistId(url);
     if (!playlistId) {
       return res.status(400).json({ error: 'Provided URL is not a valid YouTube playlist or mix link' });
+    }
+
+    const cachedPlaylist = playlistCache.get(playlistId);
+    if (cachedPlaylist) {
+      console.log(`[Playlist] ⚡ Cache HIT for ${playlistId} ("${cachedPlaylist.playlistTitle}")`);
+      return res.json(cachedPlaylist);
     }
 
     console.log(`[Playlist] 📋 Extracting playlist metadata and tracks for: ${url} (ID: ${playlistId})`);
@@ -691,7 +917,11 @@ app.post('/api/youtube/playlist', async (req, res) => {
     });
     ytDlpArgs.push(`https://www.youtube.com/playlist?list=${playlistId}`);
 
-    execFile(YTDLP_BIN, ytDlpArgs, { maxBuffer: 50 * 1024 * 1024, timeout: 45000 }, async (error, stdout, stderr) => {
+    ytdlpLimiter.run((done) => {
+      execFile(YTDLP_BIN, ytDlpArgs, { maxBuffer: 50 * 1024 * 1024, timeout: 45000 }, (error, stdout, stderr) => {
+        done(null, { error, stdout, stderr });
+      });
+    }).then(async ({ error, stdout, stderr }) => {
       if (!error && stdout) {
         try {
           const data = JSON.parse(stdout);
@@ -718,13 +948,15 @@ app.post('/api/youtube/playlist', async (req, res) => {
 
           if (tracks.length > 0) {
             console.log(`[Playlist] ✅ yt-dlp resolved ${tracks.length} tracks for "${data.title || playlistId}"`);
-            return res.json({
+            const playlistPayload = {
               playlistId,
               playlistTitle: data.title || 'YouTube Playlist',
               channel: data.channel || data.uploader || 'YouTube Channel',
               trackCount: tracks.length,
               tracks,
-            });
+            };
+            playlistCache.set(playlistId, playlistPayload);
+            return res.json(playlistPayload);
           }
         } catch (parseErr) {
           console.warn('[Playlist] ⚠️ yt-dlp parse warning:', parseErr.message);
@@ -760,13 +992,15 @@ app.post('/api/youtube/playlist', async (req, res) => {
 
             if (tracks.length > 0) {
               console.log(`[Playlist] ✅ Innertube resolved ${tracks.length} tracks for "${pl.info?.title || playlistId}"`);
-              return res.json({
+              const playlistPayload = {
                 playlistId,
                 playlistTitle: pl.info?.title || 'YouTube Playlist',
                 channel: pl.info?.author?.name || 'YouTube Channel',
                 trackCount: tracks.length,
                 tracks,
-              });
+              };
+              playlistCache.set(playlistId, playlistPayload);
+              return res.json(playlistPayload);
             }
           }
         }
@@ -790,7 +1024,7 @@ app.post('/api/youtube/playlist', async (req, res) => {
  * MODULE 1 - Endpoint 2: GET /api/youtube/download
  * Streams the requested bitrate binary with formatId or quality selector
  */
-app.get('/api/youtube/download', async (req, res) => {
+app.get('/api/youtube/download', downloadLimiter, async (req, res) => {
   try {
     const rawUrl = req.query.url || (req.query.id ? `https://www.youtube.com/watch?v=${req.query.id.replace(/^yt_/, '')}` : null);
     const formatId = req.query.formatId;
@@ -830,7 +1064,11 @@ app.get('/api/youtube/download', async (req, res) => {
     console.log(`[Downloader] ⬇️ Streaming audio (${formatFilter}) for: ${targetUrl} (File: ${sanitizedFileName})`);
 
     // Strategy 1: Resolve direct audio stream URL with yt-dlp -g
-    execFile(YTDLP_BIN, buildYtDlpArgs({ format: formatFilter, getUrl: true }).concat(targetUrl), { timeout: 35000 }, async (err, stdout, stderr) => {
+    ytdlpLimiter.run((done) => {
+      execFile(YTDLP_BIN, buildYtDlpArgs({ format: formatFilter, getUrl: true }).concat(targetUrl), { timeout: 35000 }, (err, stdout, stderr) => {
+        done(null, { err, stdout, stderr });
+      });
+    }).then(async ({ err, stdout, stderr }) => {
       if (!err && stdout && stdout.trim().startsWith('http')) {
         const directAudioUrl = stdout.trim().split('\n')[0].trim();
         console.log(`[Downloader] 🎯 Resolved direct audio CDN URL via yt-dlp for: ${targetUrl}`);
@@ -911,11 +1149,35 @@ app.get('/api/youtube/download', async (req, res) => {
         outputPath: temporaryFile,
         extraArgs: ['--buffer-size', '64K', '--audio-quality', '0', '--no-part'],
       }).concat(targetUrl));
+
+      let clientDisconnected = false;
+      const cleanupDownloadResources = () => {
+        try {
+          if (ytDlpProcess && !ytDlpProcess.killed) {
+            ytDlpProcess.kill('SIGTERM');
+          }
+        } catch (_) {}
+        try {
+          if (fs.existsSync(temporaryFile)) {
+            fs.unlinkSync(temporaryFile);
+          }
+        } catch (_) {}
+      };
+
+      req.on('close', () => {
+        if (!res.writableEnded) {
+          clientDisconnected = true;
+          console.log(`[Downloader] 🔌 Client connection closed during download: ${sanitizedFileName}`);
+          cleanupDownloadResources();
+        }
+      });
+
       const extractionTimeout = setTimeout(() => {
         ytDlpProcess.kill('SIGTERM');
       }, 120000);
 
       const failDownload = (message, details) => {
+        if (clientDisconnected) return;
         console.error(`[Downloader] ❌ ${message}${details ? `: ${details}` : ''}`);
         try {
           if (fs.existsSync(temporaryFile)) fs.unlinkSync(temporaryFile);
@@ -941,6 +1203,11 @@ app.get('/api/youtube/download', async (req, res) => {
 
       ytDlpProcess.on('close', (code, signal) => {
         clearTimeout(extractionTimeout);
+        if (clientDisconnected) {
+          cleanupDownloadResources();
+          return;
+        }
+
         if (code !== 0) {
           failDownload(`yt-dlp exited with code ${code}`, signal || undefined);
           return;
@@ -964,6 +1231,12 @@ app.get('/api/youtube/download', async (req, res) => {
         const fileStream = fs.createReadStream(temporaryFile);
         fileStream.on('error', (error) => failDownload('Temporary audio read failed', error.message));
         fileStream.on('close', () => {
+          try {
+            if (fs.existsSync(temporaryFile)) fs.unlinkSync(temporaryFile);
+          } catch (_) {}
+        });
+        req.on('close', () => {
+          fileStream.destroy();
           try {
             if (fs.existsSync(temporaryFile)) fs.unlinkSync(temporaryFile);
           } catch (_) {}
@@ -994,6 +1267,13 @@ app.get('/api/search/youtube', async (req, res) => {
     }
 
     const cleanQuery = query.trim();
+    const searchKey = `${cleanQuery.toLowerCase()}:${limit}`;
+    const cachedSearch = searchCache.get(searchKey);
+    if (cachedSearch) {
+      console.log(`[Search] ⚡ Cache HIT for "${cleanQuery}"`);
+      return res.json(cachedSearch);
+    }
+
     console.log(`[Search] 🔍 Searching YouTube for: "${cleanQuery}" (limit: ${limit})`);
 
     const ytmusicSearch = queryYtMusic('search', cleanQuery, String(limit));
@@ -1003,7 +1283,9 @@ app.get('/api/search/youtube', async (req, res) => {
       );
       if (results.length) {
         console.log(`[Search] ✅ ytmusicapi returned ${results.length} tracks for "${cleanQuery}"`);
-        return res.json({ query: cleanQuery, source: 'ytmusicapi', results });
+        const payload = { query: cleanQuery, source: 'ytmusicapi', results };
+        searchCache.set(searchKey, payload);
+        return res.json(payload);
       }
       console.warn(`[Search] ⚠️ ytmusicapi returned no valid song results for "${cleanQuery}"; using fallback search.`);
     }
@@ -1048,7 +1330,9 @@ app.get('/api/search/youtube', async (req, res) => {
           });
 
           console.log(`[Search] ✅ YouTube Data API returned ${results.length} tracks for "${cleanQuery}"`);
-          return res.json({ query: cleanQuery, source: 'youtube_data_api_v3', results });
+          const payload = { query: cleanQuery, source: 'youtube_data_api_v3', results };
+          searchCache.set(searchKey, payload);
+          return res.json(payload);
         }
       } catch (apiErr) {
         console.warn(`[Search] ⚠️ YouTube Data API failed (${apiErr.response?.status || apiErr.message}). Falling back to yt-dlp search...`);
@@ -1061,7 +1345,11 @@ app.get('/api/search/youtube', async (req, res) => {
       extraArgs: ['--flat-playlist'],
     }).concat(`ytsearch${limit}:${cleanQuery}`);
 
-    execFile(YTDLP_BIN, ytDlpArgs, { timeout: 12000, maxBuffer: 15 * 1024 * 1024 }, (error, stdout, stderr) => {
+    ytdlpLimiter.run((done) => {
+      execFile(YTDLP_BIN, ytDlpArgs, { timeout: 12000, maxBuffer: 15 * 1024 * 1024 }, (error, stdout, stderr) => {
+        done(null, { error, stdout, stderr });
+      });
+    }).then(({ error, stdout, stderr }) => {
       if (!error && stdout) {
         try {
           const json = JSON.parse(stdout);
@@ -1091,7 +1379,9 @@ app.get('/api/search/youtube', async (req, res) => {
           });
 
           console.log(`[Search] ✅ yt-dlp search resolved ${results.length} tracks for "${cleanQuery}"`);
-          return res.json({ query: cleanQuery, source: 'yt_dlp_search', results });
+          const payload = { query: cleanQuery, source: 'yt_dlp_search', results };
+          searchCache.set(searchKey, payload);
+          return res.json(payload);
         } catch (parseErr) {
           console.warn(`[Search] ⚠️ yt-dlp parse warning: ${parseErr.message}`);
         }
@@ -1125,7 +1415,9 @@ app.get('/api/search/youtube', async (req, res) => {
         }));
 
         console.log(`[Search] ✅ Fast fallback returned ${fallbackResults.length} tracks`);
-        return res.json({ query: cleanQuery, source: 'saavn_search_fallback', results: fallbackResults });
+        const payload = { query: cleanQuery, source: 'saavn_search_fallback', results: fallbackResults };
+        searchCache.set(searchKey, payload);
+        return res.json(payload);
       }).catch((fallbackErr) => {
         return res.status(502).json({ error: 'Search failed across all backend engines', details: fallbackErr.message });
       });
@@ -1145,11 +1437,42 @@ app.get('/api/search', (req, res) => {
   app.handle(req, res);
 });
 
-app.listen(PORT, () => {
+// Centralized Error Handling Middleware
+app.use((err, req, res, next) => {
+  console.error('[GlobalError]', err.stack || err.message);
+  if (res.headersSent) return next(err);
+  return res.status(err.status || 500).json({
+    error: 'INTERNAL_SERVER_ERROR',
+    message: process.env.NODE_ENV === 'production' ? 'An internal error occurred.' : err.message,
+  });
+});
+
+const server = app.listen(PORT, () => {
   console.log(`🚀 Aura Player YouTube Extractor Microservice running on port ${PORT}`);
   console.log(`[Microservice] Server version: ${runtimeDiagnostics.serverVersion}`);
   console.log(`👉 Engine: ${YTDLP_BIN}`);
+  console.log(`👉 GET  /health & /ready (Health and Readiness probes)`);
   console.log(`👉 GET  /api/search/youtube?q=... (Backend Search Proxy)`);
   console.log(`👉 POST /api/youtube/extract (Multi-format HQ/MQ/LQ)`);
   console.log(`👉 GET  /api/youtube/download?formatId=...&quality=...`);
 });
+
+// Production Graceful Shutdown Handlers
+let isShuttingDown = false;
+function handleGracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`[Microservice] 🛑 Received ${signal}. Starting graceful shutdown...`);
+  server.close(() => {
+    console.log('[Microservice] 🔒 HTTP server closed gracefully.');
+    cleanOldTempFiles();
+    process.exit(0);
+  });
+  setTimeout(() => {
+    console.error('[Microservice] ⚠️ Forcing process exit after shutdown timeout.');
+    process.exit(1);
+  }, 10000).unref();
+}
+
+process.on('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => handleGracefulShutdown('SIGINT'));
