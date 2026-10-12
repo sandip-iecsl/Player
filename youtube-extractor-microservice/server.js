@@ -221,8 +221,11 @@ async function resolveWithInnerTube(videoId, targetUrl) {
     const durationSec = Math.round(Number(info.basic_info.duration) || 0) || 180;
     const thumbnail = info.basic_info.thumbnail?.[0]?.url || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
-    const adaptive = info.streaming_data?.adaptive_formats || [];
-    const audioFormats = adaptive.filter(f => f.mime_type?.includes('audio') || f.has_audio);
+    const allFormats = [
+      ...(info.streaming_data?.adaptive_formats || []),
+      ...(info.streaming_data?.formats || []),
+    ];
+    const audioFormats = allFormats.filter(f => (f.mime_type?.includes('audio') || f.has_audio) && (f.url || f.signature_cipher));
 
     // Sort descending by bitrate
     audioFormats.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));

@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-const BASE_URL = 'https://player-wwrc.onrender.com';
+const BASE_URL = process.env.YOUTUBE_EXTRACTOR_URL || 'http://127.0.0.1:3000';
 
 const testUrls = [
   'https://www.youtube.com/watch?v=kJQP7kiw5Fk', // Despacito

@@ -78,7 +78,7 @@ class YouTubeExtractorService {
   ));
 
   static const String cacheBoxName = 'yt_imports_cache_v2';
-  String? _cachedWorkingEndpoint = 'https://player-wwrc.onrender.com';
+  String? _cachedWorkingEndpoint;
   final Map<String, Future<YouTubeExtractionResult?>> _inFlightExtractions = {};
 
   static final RegExp _strictVideoIdRegex = RegExp(r'^[a-zA-Z0-9_\-]{11}$');
@@ -322,24 +322,27 @@ class YouTubeExtractorService {
     return formats.first;
   }
 
-  /// Candidate microservice endpoint URLs (Cloud Production URL + Local ADB fallbacks)
+  /// Candidate microservice endpoint URLs (Local / Custom Network fallbacks)
   List<String> get _candidateEndpoints {
     final list = <String>[];
-    final envUrl = dotenv.env['YOUTUBE_EXTRACTOR_API_URL'];
-    if (envUrl != null && envUrl.trim().isNotEmpty) {
+    final envUrl = dotenv.env['YOUTUBE_EXTRACTOR_API_URL'] ??
+        dotenv.env['YOUTUBE_EXTRACTOR_URL'];
+    if (envUrl != null &&
+        envUrl.trim().isNotEmpty &&
+        !envUrl.contains('onrender.com')) {
       list.add(envUrl.trim().replaceAll(RegExp(r'\/$'), ''));
     }
-    if (_cachedWorkingEndpoint != null) {
+    if (_cachedWorkingEndpoint != null &&
+        !_cachedWorkingEndpoint!.contains('onrender.com')) {
       list.add(_cachedWorkingEndpoint!);
     }
-    list.add('https://player-wwrc.onrender.com'); // Live Cloud Production URL (Render)
 
-    // Local fallbacks: Only query localhost on Desktop or Android Emulator
+    // Local fallbacks: Query localhost on Desktop, Android Emulator, or local network
     if (!kIsWeb) {
       if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
         list.add('http://localhost:3000');
         list.add('http://127.0.0.1:3000');
-      } else if (Platform.isAndroid && kDebugMode) {
+      } else if (Platform.isAndroid) {
         list.add('http://10.0.2.2:3000'); // Android Emulator fallback
       }
     }

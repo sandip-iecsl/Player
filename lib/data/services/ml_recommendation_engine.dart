@@ -17,7 +17,6 @@ class MLRecommendationEngine {
 
   // JioSaavn / Microservice API endpoints
   static const List<String> _apiEndpoints = [
-    'https://player-wwrc.onrender.com/api', // Live Cloud Production URL (Render)
     'http://localhost:3000/api', // Local server (desktop)
     'http://10.0.2.2:3000/api', // Android emulator
   ];
