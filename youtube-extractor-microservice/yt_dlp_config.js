@@ -47,7 +47,7 @@ function buildYtDlpArgs({ format, dumpJson = false, getUrl = false, noPlaylist =
     '--no-warnings',
     ...(noPlaylist ? ['--no-playlist'] : []),
     '--no-check-certificates',
-    '--extractor-args', 'youtube:player_client=android,web',
+    '--extractor-args', 'youtube:player_client=ios,visionos,web',
     ...(cookiePath ? ['--cookies', cookiePath] : []),
     ...(format ? ['-f', format] : []),
     ...(outputPath ? ['-o', outputPath] : []),

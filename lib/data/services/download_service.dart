@@ -61,15 +61,32 @@ class DownloadService {
         return null;
       }
 
-      debugPrint(
-          '[Download] 🚀 Starting download: "${song.title}" ($targetBitrate - Format ID: $targetFormatId)');
-      final savedPath = await _downloadOnMobile(
+      var savedPath = await _downloadOnMobile(
         song,
         audioUrl,
         onProgress,
         selectedFormat: selectedFormat,
         targetFormatId: targetFormatId,
       );
+
+      // If direct CDN stream failed (e.g. 403 HTTP response due to IP binding), retry via microservice download stream proxy
+      if (savedPath == null && isYoutube) {
+        final proxyUrl = YouTubeExtractorService().getDownloadUrl(
+          song,
+          formatId: targetFormatId,
+          quality: selectedFormat?.quality,
+        );
+        if (proxyUrl != audioUrl) {
+          debugPrint('[Download] 🔄 Direct CDN failed; retrying via microservice download stream...');
+          savedPath = await _downloadOnMobile(
+            song,
+            proxyUrl,
+            onProgress,
+            selectedFormat: selectedFormat,
+            targetFormatId: targetFormatId,
+          );
+        }
+      }
 
       if (savedPath != null) {
         // Register in offline_songs Hive box with bitrate and format metadata

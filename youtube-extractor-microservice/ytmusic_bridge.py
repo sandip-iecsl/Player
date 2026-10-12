@@ -40,7 +40,10 @@ def normalize_search_item(item: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def song_metadata(ytmusic: YTMusic, video_id: str) -> dict[str, Any] | None:
-    data = ytmusic.get_song(video_id)
+    try:
+        data = ytmusic.get_song(video_id)
+    except Exception:
+        return None
     details = data.get("videoDetails") or {}
     returned_id = details.get("videoId")
     if returned_id != video_id:
@@ -78,7 +81,10 @@ def main() -> None:
     if operation == "song":
         video_id = sys.argv[2]
         result = song_metadata(ytmusic, video_id)
-        print(json.dumps(result or {}))
+        if not result or result.get("videoId") != video_id:
+            print(json.dumps({}))
+            return
+        print(json.dumps(result))
         return
 
     raise ValueError(f"unsupported operation: {operation}")

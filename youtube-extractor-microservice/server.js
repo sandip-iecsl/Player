@@ -12,6 +12,8 @@ const {
   diagnostics,
   PYTHON_BIN,
   YTMUSIC_BRIDGE,
+  cookiePath,
+  fileIsReadable,
 } = require('./yt_dlp_config');
 
 process.on('uncaughtException', (error) => {
@@ -375,7 +377,7 @@ function queryYtMusic(operation, ...args) {
       maxBuffer: 10 * 1024 * 1024,
     });
     const payload = JSON.parse(output);
-    if (payload.error) {
+    if (!payload || payload.error || Object.keys(payload).length === 0) {
       return null;
     }
     return payload;
@@ -421,10 +423,8 @@ app.post('/api/youtube/extract', async (req, res) => {
 
     console.log(`[Extractor] 🔍 Resolving multi-format audio streams with yt-dlp for: ${targetUrl} (ID: ${videoId})`);
 
-    const ytmusicMetadata = videoId ? queryYtMusic('song', videoId) : null;
-    if (ytmusicMetadata && ytmusicMetadata.videoId !== videoId) {
-      return youtubeUnavailable(res, videoId, 'SOURCE_ID_MISMATCH', 'YouTube Music metadata did not match the requested video.');
-    }
+    const rawYtMusic = videoId ? queryYtMusic('song', videoId) : null;
+    const ytmusicMetadata = (rawYtMusic && rawYtMusic.videoId === videoId) ? rawYtMusic : null;
 
     // yt-dlp dump-single-json to parse full format list without re-encoding
     const ytDlpArgs = buildYtDlpArgs({
@@ -813,15 +813,15 @@ app.get('/api/youtube/download', async (req, res) => {
       (!formatId && (quality === 'Data Saver' || quality === 'Low')) ? 'webm' : 'm4a';
     const sanitizedFileName = encodeURIComponent(`${customTitle}.${outputExtension}`);
 
-    let formatFilter = 'bestaudio/140/251/139';
+    let formatFilter = 'bestaudio/140/251/139/best';
     if (formatId && formatId !== 'undefined') {
-      formatFilter = `${formatId}/${formatFilter}`;
+      formatFilter = `${formatId}/bestaudio/140/251/139/best`;
     } else if (quality === 'Data Saver' || quality === 'Low') {
-      formatFilter = '249/139/bestaudio';
+      formatFilter = '249/139/250/bestaudio/best';
     } else if (quality === 'Medium') {
-      formatFilter = '139/140/bestaudio';
+      formatFilter = '140/251/139/bestaudio/best';
     } else {
-      formatFilter = 'bestaudio/140/251/139';
+      formatFilter = 'bestaudio/140/251/139/best';
     }
 
     console.log(`[Downloader] ⬇️ Streaming audio (${formatFilter}) for: ${targetUrl} (File: ${sanitizedFileName})`);
@@ -856,8 +856,7 @@ app.get('/api/youtube/download', async (req, res) => {
           response.data.pipe(res);
           return;
         } catch (proxyErr) {
-          console.warn(`[Downloader] ⚠️ Proxy stream redirecting directly: ${proxyErr.message}`);
-          return res.redirect(directAudioUrl);
+          console.warn(`[Downloader] ⚠️ Direct CDN stream failed (${proxyErr.message}); falling back to download strategies...`);
         }
       }
 
